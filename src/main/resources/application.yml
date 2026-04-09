@@ -1,0 +1,36 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/postgres?currentSchema=test
+    username: stock1234
+    password: stock1234
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    properties:
+      hibernate:
+        default_schema: test
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # OpenAI API Key (환경변수에서 로드 권장)
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+
+# ==================== 애플리케이션 커스텀 설정 ====================
+app:
+  embedding:
+    model-path: models/multilingual-e5-base/model.onnx
+    tokenizer-path: models/multilingual-e5-base/tokenizer.json
+    dimension: 768
+    max-token-length: 512
+  rag:
+    top-k: 5
+    similarity-threshold: 0.5
+  chunk:
+    max-chars: 800
+    overlap-chars: 100

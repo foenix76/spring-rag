@@ -184,3 +184,6 @@ installedFiles
 # Jetty / Tomcat
 *.war.original
 .venv/
+multilingual-e5-base-onnx/
+venv/
+src/main/resources/models/multilingual-e5-base/*

@@ -1,0 +1,186 @@
+# =====================================================
+# General Base .gitignore
+# =====================================================
+
+# IDE / Editor
+.idea/
+*.iml
+*.iws
+.vscode/
+.gemini/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node.js / Frontend
+node_modules/
+dist/
+build/
+.cache/
+*.local
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database / Secrets
+*.sql.bak
+*.dump
+.env
+
+# Temporary Files
+*.tmp
+*.temp
+*.bak
+!*.md.bak
+commit_msg.txt
+TODO.md
+
+# AI Plans (Optional: if you want to ignore archive)
+# .ai/plan/archive/
+
+# =====================================================
+# Java / Spring / JVM
+# =====================================================
+# Compiled class files
+*.class
+
+# Package files
+*.jar
+*.war
+*.ear
+
+# Error logs
+hs_err_pid*
+
+# Build directories
+target/
+build/
+out/
+
+# Gradle
+.gradle/
+gradle-wrapper.jar
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# Spring Boot
+spring.log
+spring-boot-devtools.properties
+
+# =====================================================
+# Comprehensive Java / Spring / JVM / IDE ignores
+# =====================================================
+
+# Compiled class files
+*.class
+
+# Package files
+*.jar
+*.war
+*.ear
+*.nar
+*.zip
+*.tar.gz
+
+# Native crash logs
+hs_err_pid*
+
+# Build directories
+target/
+build/
+out/
+bin/
+
+# Gradle
+.gradle/
+gradle-wrapper.jar
+gradlew
+gradlew.bat
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+target/
+
+# Local maven repository (optional)
+# .repository/
+
+# IDEs
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+workspace.xml
+usage.statistics.xml
+
+# Eclipse
+.project
+.classpath
+.settings/
+.factorypath
+
+# NetBeans
+nbproject/private/
+build/
+dist/
+
+# VS Code
+.vscode/
+
+# Spring Tools / STS
+.springBeans
+
+# Generated sources
+generated-sources/
+generated-test-sources/
+
+# Test reports
+surefire-reports/
+failsafe-reports/
+
+# Logs
+*.log
+logs/
+
+# Local configuration and secrets
+local.properties
+.env
+.env.*
+
+# Database
+*.db
+*.sql
+*.sql.gz
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Misc
+dependency-reduced-pom.xml
+release.properties
+installedFiles
+
+# Jetty / Tomcat
+*.war.original
+.venv/

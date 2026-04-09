@@ -1,0 +1,35 @@
+# Project Rules & Customs (Detailed) - KR Backup
+
+## 🐧 Linux / Ubuntu (incl. WSL2)
+### Graceful Shutdown & Start
+- **Restart (Example)**: `lsof -ti:<PORT> | xargs kill -9 2>/dev/null; <START_CMD>`
+
+### 🔧 터미널 인코딩 설정
+```bash
+export LANG=ko_KR.UTF-8
+export LC_ALL=ko_KR.UTF-8
+```
+
+## 🪟 Windows / PowerShell
+### 🛠️ PowerShell 인코딩 설정 (UTF-8 with BOM)
+```powershell
+$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$PSDefaultParameterValues['*:Encoding'] = 'utf8'
+chcp 65001
+```
+
+## 📝 구현 계획서(Implementation Plan) 가이드 (CRITICAL) ⭐
+- **언어**: 반드시 **한국어**로 작성한다. 사고 과정도 한국어 우선.
+- **파일명**: `.ai/plan/YYYYMMDD_순번_설명.md` 형식을 엄수한다.
+- **필수 포함 항목**:
+  - **문제 정의**: 무엇이 문제이고 왜 고쳐야 하는가?
+  - **해결 방안**: 구체적으로 어떻게 수정할 것인가?
+  - **대상 파일 (Target Files)**: 수정이 필요한 모든 파일 목록.
+  - **테스트 전략**: 수정 후 어떻게 검증할 것인가?
+  - **주의사항**: 잠재적 버그나 충돌 가능성.
+- **Gemini 특례**: 아티팩트 UI 렌더링을 위해 `write_to_file(IsArtifact: true)`를 먼저 실행한다.
+
+## 🤝 협업 프로토콜 (Multi-Agent Protocol)
+- 다른 에이전트가 만든 플랜과 메모리를 존중하며, 그 위에서 작업을 이어간다.
+- 아키텍처의 중대한 변경은 독단적으로 하지 말고 형에게 확인받는다.
+- `.ai/` 폴더를 공통의 '뇌'로 활용하여 컨텍스트를 동기화한다.

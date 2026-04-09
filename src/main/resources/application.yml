@@ -1,10 +1,10 @@
 server:
-  port: 8080
+  port: 8091
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/postgres?currentSchema=test
-    username: stock1234
+    url: jdbc:postgresql://localhost:5432/postgres?currentSchema=test,public
+    username: postgres
     password: stock1234
     driver-class-name: org.postgresql.Driver
   jpa:
@@ -19,10 +19,20 @@ spring:
   # OpenAI API Key (환경변수에서 로드 권장)
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY}
+      api-key: ${OPENAI_API_KEY:none}
 
 # ==================== 애플리케이션 커스텀 설정 ====================
 app:
+  llm:
+    provider: SF-TEST   # LOCAL-OLLAMA | LOCAL-LLAMA | OPENAI | SF-TEST
+    ollama:
+      base-url: http://localhost:11434
+      model: qwen2.5-14b-instruct:latest
+    llama:
+      base-url: http://localhost:8091  # llama-server 기본 포트
+    sf:
+      token: ${SF_TOKEN:sk-xhettimyfiwloviwafyyckdbkgriugurbyvtjckrgpndyqrh}
+      model: Qwen/Qwen2.5-7B-Instruct
   embedding:
     model-path: models/multilingual-e5-base/model.onnx
     tokenizer-path: models/multilingual-e5-base/tokenizer.json

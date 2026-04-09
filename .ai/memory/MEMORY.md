@@ -42,3 +42,8 @@ All AI-related files must stay within the `.ai/` directory.
 
 ## 🎯 Current Status
 - [2026-04-04] Initial setup with Dual Language strategy completed.
+- [2026-04-09] SiliconFlow (Qwen 2.5) RAG system integration completed.
+  - Successfully resolved ONNX embedding model input error (input_ids + attention_mask).
+  - Populated 100 sample applicants (400 items) into vector DB.
+  - Optimized Git repo size (1.5GB -> 1MB) by pruning temporary garbage files.
+  - Fixed frontend Vue 3 'this' context issues and server token authentication.

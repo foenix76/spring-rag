@@ -56,40 +56,39 @@
             const chatBox = ref(null);
 
             // --- Methods ---
-            const methods = {
-                async sendMessage() {
-                    const text = userInput.value.trim();
-                    if (!text || isLoading.value) return;
+            const scrollToBottom = async () => {
+                await nextTick();
+                if (chatBox.value) {
+                    chatBox.value.scrollTop = chatBox.value.scrollHeight;
+                }
+            };
 
-                    messages.push({ type: 'user', text: text });
-                    userInput.value = '';
-                    isLoading.value = true;
-                    await this.scrollToBottom();
+            const sendMessage = async () => {
+                const text = userInput.value.trim();
+                if (!text || isLoading.value) return;
 
-                    try {
-                        const response = await fetch('/api/chat', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ message: text })
-                        });
-                        const data = await response.json();
-                        messages.push({ 
-                            type: 'bot', 
-                            text: data.answer, 
-                            sources: data.sources 
-                        });
-                    } catch (e) {
-                        messages.push({ type: 'bot', text: '오류가 발생했습니다: ' + e.message });
-                    } finally {
-                        isLoading.value = false;
-                        await this.scrollToBottom();
-                    }
-                },
-                async scrollToBottom() {
-                    await nextTick();
-                    if (chatBox.value) {
-                        chatBox.value.scrollTop = chatBox.value.scrollHeight;
-                    }
+                messages.push({ type: 'user', text: text });
+                userInput.value = '';
+                isLoading.value = true;
+                await scrollToBottom();
+
+                try {
+                    const response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: text })
+                    });
+                    const data = await response.json();
+                    messages.push({ 
+                        type: 'bot', 
+                        text: data.answer, 
+                        sources: data.sources 
+                    });
+                } catch (e) {
+                    messages.push({ type: 'bot', text: '오류가 발생했습니다: ' + e.message });
+                } finally {
+                    isLoading.value = false;
+                    await scrollToBottom();
                 }
             };
 
@@ -98,7 +97,8 @@
                 messages,
                 isLoading,
                 chatBox,
-                ...methods
+                sendMessage,
+                scrollToBottom
             };
         }
     }).mount('#app');

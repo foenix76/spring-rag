@@ -48,23 +48,19 @@ public class OnnxEmbeddingService {
             Encoding encoding = tokenizer.encode(text);
             long[] inputIds = encoding.getIds();
             long[] attentionMask = encoding.getAttentionMask();
-            long[] tokenTypeIds = encoding.getTypeIds();
 
             int seqLen = Math.min(inputIds.length, maxTokenLength);
             if (inputIds.length > maxTokenLength) {
                 inputIds = java.util.Arrays.copyOf(inputIds, maxTokenLength);
                 attentionMask = java.util.Arrays.copyOf(attentionMask, maxTokenLength);
-                tokenTypeIds = java.util.Arrays.copyOf(tokenTypeIds, maxTokenLength);
             }
 
             long[][] inputIdsBatch = {inputIds};
             long[][] attentionMaskBatch = {attentionMask};
-            long[][] tokenTypeIdsBatch = {tokenTypeIds};
 
             Map<String, OnnxTensor> inputs = new HashMap<>();
             inputs.put("input_ids", OnnxTensor.createTensor(env, inputIdsBatch));
             inputs.put("attention_mask", OnnxTensor.createTensor(env, attentionMaskBatch));
-            inputs.put("token_type_ids", OnnxTensor.createTensor(env, tokenTypeIdsBatch));
 
             try (OrtSession.Result result = session.run(inputs)) {
                 float[][][] lastHiddenState = (float[][][]) result.get(0).getValue();
@@ -83,6 +79,7 @@ public class OnnxEmbeddingService {
                     pooled[j] /= maskSum;
                 }
 
+                // L2 Normalization
                 float norm = 0;
                 for (float v : pooled) norm += v * v;
                 norm = (float) Math.sqrt(norm);

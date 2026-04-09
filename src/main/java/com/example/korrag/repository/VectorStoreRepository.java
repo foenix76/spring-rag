@@ -25,7 +25,7 @@ public class VectorStoreRepository {
 
         jdbcTemplate.update("""
                 INSERT INTO test.essay_vectors (accept_no, name, essay_type, chunk_index, content, embedding)
-                VALUES (?, ?, ?, ?, ?, ?::test.vector)
+                VALUES (?, ?, ?, ?, ?, ?::vector)
                 ON CONFLICT (accept_no, essay_type, chunk_index)
                 DO UPDATE SET content = EXCLUDED.content,
                               embedding = EXCLUDED.embedding,
@@ -44,10 +44,10 @@ public class VectorStoreRepository {
                        essay_type,
                        chunk_index,
                        content,
-                       1 - (embedding <=> ?::test.vector) AS similarity
+                       1 - (embedding <=> ?::vector) AS similarity
                 FROM test.essay_vectors
-                WHERE 1 - (embedding <=> ?::test.vector) >= ?
-                ORDER BY embedding <=> ?::test.vector
+                WHERE 1 - (embedding <=> ?::vector) >= ?
+                ORDER BY embedding <=> ?::vector
                 LIMIT ?
                 """,
                 vectorString, vectorString, threshold, vectorString, topK);

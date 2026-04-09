@@ -183,7 +183,11 @@ installedFiles
 
 # Jetty / Tomcat
 *.war.original
-.venv/
+# AI Models
+*.onnx
 multilingual-e5-base-onnx/
-venv/
 src/main/resources/models/multilingual-e5-base/*
+
+# Python Environment
+venv/
+.venv/

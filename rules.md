@@ -11,7 +11,7 @@
 | **문서강화** | `/문서강화` | Enhance logic and add few-shots to documentation |
 | **한영동기화** | `/한영동기화` | Synchronize `.md` (English) and `_KR.md.bak` (Korean) files |
 | **베이스동기화** | `/베이스동기화` | **Intelligent AI Merge**: Sync with master `base` repo while preserving local context |
-| **베이스기여** | `/베이스기여` | **Intelligent Reverse Merge**: Fetch master first, then semantically integrate generalizable local rules into the master `base` repo |
+| **베이스기여** | `/베이스기여` | **[CRITICAL: Selective Only]** Fetch master first, then ONLY integrate generalizable rules into `base`. **NEVER push the whole branch.** |
 | **초안파일생성** | `/초안파일생성` | `drafts/YYYYMMDDHHMM/초안.md` 자동 생성 (`bash .ai/scripts/create-draft.sh`) |
 | **초안생성** | `/초안생성 @파일경로` | `drafts/**/*.md` 파일 보강: 1. 오탈자 교정 2. **분량 폭격(2배 확장)**: 사례, 단계별 프로세스, 오해 해결, 티키타카, 미래 전망 5대 전략 필수 적용 3. 상단에 이미지 프롬프트 3개 생성 |
 | **글만생성** | `/글만생성 @파일경로` | **[텍스트 전용]**: 이미지 생성을 건너뛰고 본문 내용 보강 및 이미지 프롬프트만 생성하여 .md 파일로 저장 |

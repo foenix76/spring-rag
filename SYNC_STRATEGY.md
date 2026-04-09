@@ -56,7 +56,7 @@ When you develop a brilliant, generalizable rule, it can be promoted globally us
 1. **Fetch & Compare**: Fetches the latest master `base` repo and compares it with the local contribution.
 2. **De-conflict**: Checks if similar rules were already added to the master by other projects.
 3. **Extract & Integrate**: Strips project-specific domain logic and **intelligently integrates (Appends/Merges)** the new rule into the master context.
-4. **Verified Push**: Pushes the semantically merged result back to the master repo, ensuring no existing master rules are lost.
+4. **Verified Push**: **[CRITICAL] Pushes ONLY the semantically merged rules files.** NEVER use `git push` on the whole project branch. Use a temporary directory strategy to ensure no project-specific code (like `wp_pro.py`) is ever pushed to the global `base` repo.
 
 ---
 

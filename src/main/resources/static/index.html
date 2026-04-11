@@ -85,7 +85,7 @@
     </div>
 
     <div class="input-area">
-        <input type="text" v-model="userInput" @keyup.enter="sendMessage" placeholder="질문을 입력하세요... (예: 테슬라 언급한 지원자)" :disabled="isLoading">
+        <input type="text" ref="userInputField" v-model="userInput" @keyup.enter="sendMessage" placeholder="질문을 입력하세요... (예: 테슬라 언급한 지원자)" :disabled="isLoading">
         <button @click="sendMessage" :disabled="isLoading || !userInput.trim()">전송</button>
     </div>
 </div>
@@ -102,6 +102,7 @@
             ]);
             const isLoading = ref(false);
             const chatBox = ref(null);
+            const userInputField = ref(null);
 
             // --- Methods ---
             const loadHistory = async () => {
@@ -154,6 +155,11 @@
                 messages.push({ type: 'user', text: text, status: 'idle' });
                 userInput.value = '';
                 isLoading.value = true;
+                
+                // ⭐️ 전송 즉시 포커스 다시 잡기
+                nextTick(() => {
+                    if (userInputField.value) userInputField.value.focus();
+                });
                 
                 // AI 답변용 메시지 초기화 (상태: thinking)
                 const botMessage = reactive({ 
@@ -245,6 +251,10 @@
             // --- Lifecycle ---
             onMounted(() => {
                 loadHistory();
+                // ⭐️ 페이지 로드 시 최초 포커스
+                nextTick(() => {
+                    if (userInputField.value) userInputField.value.focus();
+                });
             });
 
             return {
@@ -252,6 +262,7 @@
                 messages,
                 isLoading,
                 chatBox,
+                userInputField,
                 sendMessage,
                 scrollToBottom,
                 clearHistory

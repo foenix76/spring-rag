@@ -20,7 +20,43 @@
         input { flex: 1; padding: 0.75rem; border: 1px solid #ddd; border-radius: 0.5rem; outline: none; }
         button { padding: 0.75rem 1.5rem; background: #007bff; color: white; border: none; border-radius: 0.5rem; cursor: pointer; }
         button:disabled { background: #ccc; cursor: not-allowed; }
-        .loading { font-style: italic; color: #999; }
+        
+        /* 커서 애니메이션 */
+        .cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.1rem;
+            background: #007bff;
+            margin-left: 2px;
+            vertical-align: middle;
+            animation: blink 1s infinite;
+        }
+        @keyframes blink {
+            0%, 50%, 100% { opacity: 1 }
+            25%, 75% { opacity: 0 }
+        }
+
+        /* 💡 생각 중 상태 UX */
+        .thinking-indicator {
+            font-style: italic;
+            color: #999;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .dot {
+            width: 6px;
+            height: 6px;
+            background: #ccc;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .dot:nth-child(1) { animation-delay: -0.32s; }
+        .dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
     </style>
 </head>
 <body>
@@ -32,8 +68,15 @@
     </div>
     
     <div class="chat-box" ref="chatBox">
-        <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.type, msg.loading ? 'loading' : '']">
-            <div style="white-space: pre-wrap;">{{ msg.text }}</div>
+        <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.type]">
+            <div style="white-space: pre-wrap; position: relative;">
+                <span v-if="msg.status === 'thinking'" class="thinking-indicator">
+                    🤔 생각 중...
+                    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                </span>
+                <span v-else>{{ msg.text }}</span>
+                <span v-if="msg.status === 'typing' || (msg.status === 'thinking' && msg.type === 'bot')" class="cursor"></span>
+            </div>
             <div v-if="msg.sources" class="sources">
                 <strong>참고:</strong>
                 <span v-for="s in msg.sources"> {{ s.name }}({{ (s.similarity * 100).toFixed(1) }}%) </span>
@@ -108,46 +151,69 @@
                 if (!text || isLoading.value) return;
 
                 // 유저 메시지 추가
-                messages.push({ type: 'user', text: text });
+                messages.push({ type: 'user', text: text, status: 'idle' });
                 userInput.value = '';
                 isLoading.value = true;
                 
-                // AI 답변용 메시지 생성 (초기 상태: 로딩 중)
-                const botMessage = reactive({ type: 'bot', text: '답변 생성 중...', loading: true, sources: null });
+                // AI 답변용 메시지 초기화 (상태: thinking)
+                const botMessage = reactive({ 
+                    type: 'bot', 
+                    text: '', 
+                    status: 'thinking', 
+                    sources: null 
+                });
                 messages.push(botMessage);
                 
                 await scrollToBottom();
 
+                // 🔹 타이핑 UX를 위한 엔진 설정
+                let buffer = ''; // 서버에서 온 원본 텍스트 누적
+                let cursor = 0;  // 현재 화면에 찍힌 커서 위치
+                let typingTimer = null;
+
+                const startTypingEngine = () => {
+                    if (typingTimer) return;
+                    typingTimer = setInterval(() => {
+                        if (cursor < buffer.length) {
+                            // 상태 전환: 첫 글자가 찍히기 시작하면 'typing'
+                            if (botMessage.status === 'thinking') {
+                                botMessage.status = 'typing';
+                            }
+                            botMessage.text += buffer[cursor];
+                            cursor++;
+                            scrollToBottom();
+                        } else {
+                            // 버퍼를 다 비웠고 스트림도 끝났다면 엔진 정지
+                            if (!isLoading.value) {
+                                clearInterval(typingTimer);
+                                typingTimer = null;
+                                botMessage.status = 'idle'; // 완료
+                            }
+                        }
+                    }, 25); // 🔹 형의 추천 리듬: 25ms
+                };
+
                 try {
-                    // ⭐️ 완벽한 JSON 스트리밍을 위한 sse.js 재도입
                     const sse = new SSE('/api/chat', {
                         headers: { 'Content-Type': 'application/json' },
                         payload: JSON.stringify({ message: text }),
                         method: 'POST'
                     });
 
-                    let isFirstChunk = true;
-
                     sse.addEventListener('message', (e) => {
                         try {
-                            // JSON 객체 파싱 (ChatResponse 구조)
                             const response = JSON.parse(e.data);
                             let content = '';
-                            
-                            // Spring AI ChatResponse 내부 구조 탐색 (버전에 따라 content 또는 text 사용)
                             if (response.result && response.result.output) {
                                 content = response.result.output.content || response.result.output.text || '';
                             }
                             
-                            if (isFirstChunk && content !== '') {
-                                botMessage.text = content;
-                                botMessage.loading = false;
-                                isFirstChunk = false;
-                            } else if (!isFirstChunk && content !== '') {
-                                // ⭐️ JSON 파싱이라 띄어쓰기, 개행 100% 원본 그대로 보존됨
-                                botMessage.text += content;
+                            if (content) {
+                                // ⭐️ 받은 데이터를 버퍼에만 쌓음
+                                buffer += content;
+                                // 타이핑 엔진 가동
+                                startTypingEngine();
                             }
-                            scrollToBottom();
                         } catch (err) {
                             console.error('JSON Parse Error:', err, e.data);
                         }
@@ -156,14 +222,14 @@
                     sse.addEventListener('error', (e) => {
                         console.error('SSE Error:', e);
                         botMessage.text = '오류가 발생했습니다: ' + (e.data || '서버 응답 오류');
-                        botMessage.loading = false;
+                        botMessage.status = 'idle';
                         isLoading.value = false;
+                        if (typingTimer) clearInterval(typingTimer);
                     });
 
                     sse.addEventListener('readystatechange', (e) => {
                         if (e.readyState === 2) { // CLOSED
                             isLoading.value = false;
-                            scrollToBottom();
                         }
                     });
 
@@ -171,7 +237,7 @@
 
                 } catch (e) {
                     botMessage.text = '오류가 발생했습니다: ' + e.message;
-                    botMessage.loading = false;
+                    botMessage.status = 'idle';
                     isLoading.value = false;
                 }
             };

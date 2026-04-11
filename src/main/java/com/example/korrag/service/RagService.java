@@ -32,13 +32,16 @@ public class RagService implements ApplicationRunner {
     private final OnnxEmbeddingService embeddingService;
     private final VectorStoreRepository vectorRepository;
     private final ChatMessageRepository chatMessageRepository;
+    private final OnnxRerankService rerankService;
     private final ChatClient chatClient;
 
-    @Value("${app.rag.top-k}") private int topK;
+    @Value("${app.rag.retrieval-top-k}") private int retrievalTopK;
+    @Value("${app.rag.rerank-top-k}") private int rerankTopK;
     @Value("${app.rag.similarity-threshold}") private double threshold;
 
     public RagService(ApplicantEssayRepository applicantRepository,
                       OnnxEmbeddingService embeddingService,
+                      OnnxRerankService rerankService,
                       VectorStoreRepository vectorRepository,
                       ChatMessageRepository chatMessageRepository,
                       ChatClient.Builder chatClientBuilder,
@@ -46,6 +49,7 @@ public class RagService implements ApplicationRunner {
                       HrActionTools actionTools) {
         this.applicantRepository = applicantRepository;
         this.embeddingService = embeddingService;
+        this.rerankService = rerankService;
         this.vectorRepository = vectorRepository;
         this.chatMessageRepository = chatMessageRepository;
         
@@ -99,15 +103,18 @@ public class RagService implements ApplicationRunner {
                 .map(m -> String.format("%s: %s", m.getRole(), m.getContent()))
                 .collect(Collectors.joining("\n"));
 
-        // 2. RAG 검색
+        // 2. RAG 검색 (1단계: 벡터 유사도 기반 후보군 추출)
         float[] queryVector = embeddingService.embedQuery(question);
-        List<Map<String, Object>> results = vectorRepository.searchSimilar(queryVector, topK, threshold);
+        List<Map<String, Object>> candidates = vectorRepository.searchSimilar(queryVector, retrievalTopK, threshold);
+
+        // 3. RAG 재정렬 (2단계: Reranker를 통한 정밀 평가)
+        List<Map<String, Object>> results = rerankService.rerank(question, candidates, rerankTopK);
 
         String context = results.stream()
                 .map(r -> String.format("[%s(%s) %s]: %s", r.get("name"), r.get("accept_no"), r.get("essay_type"), r.get("content")))
                 .collect(Collectors.joining("\n\n"));
 
-        // 3. Spring AI ChatClient를 이용한 답변 생성 (툴 호출 포함)
+        // 4. Spring AI ChatClient를 이용한 답변 생성 (툴 호출 포함)
         String answer = chatClient.prompt()
                 .user(u -> u.text("아래 정보를 바탕으로 질문에 답하세요.\n\n" +
                                 "[참고 지원자 정보]\n{context}\n\n" +
@@ -133,9 +140,12 @@ public class RagService implements ApplicationRunner {
                 .map(m -> String.format("%s: %s", m.getRole(), m.getContent()))
                 .collect(Collectors.joining("\n"));
 
-        // 2. RAG 검색
+        // 2. RAG 검색 (1단계: 벡터 유사도 기반 후보군 추출)
         float[] queryVector = embeddingService.embedQuery(question);
-        List<Map<String, Object>> results = vectorRepository.searchSimilar(queryVector, topK, threshold);
+        List<Map<String, Object>> candidates = vectorRepository.searchSimilar(queryVector, retrievalTopK, threshold);
+
+        // 3. RAG 재정렬 (2단계: Reranker를 통한 정밀 평가)
+        List<Map<String, Object>> results = rerankService.rerank(question, candidates, rerankTopK);
 
         String context = results.stream()
                 .map(r -> String.format("[%s(%s) %s]: %s", r.get("name"), r.get("accept_no"), r.get("essay_type"), r.get("content")))
@@ -144,7 +154,7 @@ public class RagService implements ApplicationRunner {
         // 질문 저장
         chatMessageRepository.save(ChatMessage.builder().userId(userId).role("USER").content(question).build());
 
-        // 3. 스트리밍 답변 생성 (ChatResponse 반환)
+        // 4. 스트리밍 답변 생성 (ChatResponse 반환)
         final StringBuilder fullAnswer = new StringBuilder();
         return chatClient.prompt()
                 .user(u -> u.text("아래 정보를 바탕으로 질문에 답하세요.\n\n" +

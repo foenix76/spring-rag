@@ -1,13 +1,17 @@
 package com.example.korrag.service;
 
 import com.example.korrag.entity.ApplicantEssay;
+import com.example.korrag.entity.ChatMessage;
 import com.example.korrag.repository.VectorStoreRepository;
 import com.example.korrag.repository.ApplicantEssayRepository;
-import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.ollama.OllamaChatModel;
-import dev.langchain4j.model.openai.OpenAiChatModel;
+import com.example.korrag.repository.ChatMessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -25,7 +29,8 @@ public class RagService implements ApplicationRunner {
     private final ApplicantEssayRepository applicantRepository;
     private final OnnxEmbeddingService embeddingService;
     private final VectorStoreRepository vectorRepository;
-    private final ChatModel chatModel;
+    private final ChatMessageRepository chatMessageRepository;
+    private final ChatClient chatClient;
 
     @Value("${app.rag.top-k}") private int topK;
     @Value("${app.rag.similarity-threshold}") private double threshold;
@@ -33,57 +38,46 @@ public class RagService implements ApplicationRunner {
     public RagService(ApplicantEssayRepository applicantRepository,
                       OnnxEmbeddingService embeddingService,
                       VectorStoreRepository vectorRepository,
-                      @Value("${app.llm.provider}") String llmProvider,
-                      @Value("${spring.ai.openai.api-key:none}") String apiKey,
-                      @Value("${app.llm.ollama.base-url}") String ollamaBaseUrl,
-                      @Value("${app.llm.ollama.model}") String ollamaModel,
-                      @Value("${app.llm.llama.base-url}") String llamaBaseUrl,
-                      @Value("${app.llm.sf.token:none}") String sfToken,
-                      @Value("${app.llm.sf.model}") String sfModel) {
+                      ChatMessageRepository chatMessageRepository,
+                      ChatClient.Builder chatClientBuilder,
+                      HrNavigationTools navTools,
+                      HrActionTools actionTools) {
         this.applicantRepository = applicantRepository;
         this.embeddingService = embeddingService;
         this.vectorRepository = vectorRepository;
-        switch (llmProvider.toUpperCase()) {
-            case "LOCAL-OLLAMA" -> {
-                this.chatModel = OllamaChatModel.builder()
-                        .baseUrl(ollamaBaseUrl)
-                        .modelName(ollamaModel)
-                        .build();
-                log.info("LLM 모드: LOCAL-OLLAMA ({})", ollamaModel);
-            }
-            case "LOCAL-LLAMA" -> {
-                this.chatModel = OpenAiChatModel.builder()
-                        .baseUrl(llamaBaseUrl + "/v1")
-                        .apiKey("local")
-                        .build();
-                log.info("LLM 모드: LOCAL-LLAMA ({})", llamaBaseUrl);
-            }
-            case "SF-TEST" -> {
-                this.chatModel = OpenAiChatModel.builder()
-                        .baseUrl("https://api.siliconflow.com/v1")
-                        .apiKey(sfToken)
-                        .modelName(sfModel)
-                        .build();
-                log.info("LLM 모드: SF-TEST ({})", sfModel);
-            }
-            default -> {
-                this.chatModel = OpenAiChatModel.builder().apiKey(apiKey).build();
-                log.info("LLM 모드: OPENAI");
-            }
-        }
+        this.chatMessageRepository = chatMessageRepository;
+        
+        // ChatClient 설정: 기본 시스템 프롬프트 및 툴 바인딩
+        this.chatClient = chatClientBuilder
+                .defaultSystem("당신은 채용 담당자를 돕는 전문 비서입니다. 제공된 지원자 에세이 정보와 대화 이력을 바탕으로 정확하고 친절하게 답변하세요. " +
+                        "필요한 경우 인사 시스템의 도구(화면 이동, 메일 발송 등)를 사용하여 업무를 수행하세요.")
+                .defaultTools(navTools, actionTools)
+                .build();
+        
+        log.info("RagService 초기화 완료: Spring AI ChatClient 및 MCP 툴 바인딩 완료");
     }
 
     @Override
     public void run(ApplicationArguments args) {
-        log.info("RAG 초기 데이터 로딩 및 임베딩 시작...");
+        log.info("RAG 초기 데이터 로딩 및 임베딩 확인 시작...");
         List<ApplicantEssay> applicants = applicantRepository.findAll();
+        int skipped = 0;
+        int processed = 0;
+
         for (ApplicantEssay app : applicants) {
-            embedAndStore(app, "essay1", app.getHsgEssay1());
-            embedAndStore(app, "essay2", app.getHsgEssay2());
-            embedAndStore(app, "essay3", app.getHsgEssay3());
-            embedAndStore(app, "essay4", app.getHsgEssay4());
+            if (checkAndEmbed(app, "essay1", app.getHsgEssay1())) processed++; else skipped++;
+            if (checkAndEmbed(app, "essay2", app.getHsgEssay2())) processed++; else skipped++;
+            if (checkAndEmbed(app, "essay3", app.getHsgEssay3())) processed++; else skipped++;
+            if (checkAndEmbed(app, "essay4", app.getHsgEssay4())) processed++; else skipped++;
         }
-        log.info("임베딩 완료!");
+        log.info("RAG 초기화 완료! (신규 처리: {}, 건너뜀: {})", processed, skipped);
+    }
+
+    private boolean checkAndEmbed(ApplicantEssay app, String type, String content) {
+        if (content == null || content.isBlank()) return false;
+        if (vectorRepository.existsVector(app.getAcceptNo(), type)) return false;
+        embedAndStore(app, type, content);
+        return true;
     }
 
     private void embedAndStore(ApplicantEssay app, String type, String content) {
@@ -93,6 +87,17 @@ public class RagService implements ApplicationRunner {
     }
 
     public Map<String, Object> ask(String question) {
+        return ask("HR_USER_01", question);
+    }
+
+    public Map<String, Object> ask(String userId, String question) {
+        // 1. 대화 이력 조회 (최근 10개)
+        List<ChatMessage> history = chatMessageRepository.findRecentMessagesAsc(userId, 10);
+        String historyContext = history.stream()
+                .map(m -> String.format("%s: %s", m.getRole(), m.getContent()))
+                .collect(Collectors.joining("\n"));
+
+        // 2. RAG 검색
         float[] queryVector = embeddingService.embedQuery(question);
         List<Map<String, Object>> results = vectorRepository.searchSimilar(queryVector, topK, threshold);
 
@@ -100,10 +105,31 @@ public class RagService implements ApplicationRunner {
                 .map(r -> String.format("[%s(%s) %s]: %s", r.get("name"), r.get("accept_no"), r.get("essay_type"), r.get("content")))
                 .collect(Collectors.joining("\n\n"));
 
-        String prompt = "다음 지원자 에세이 내용을 바탕으로 질문에 답하세요. 관련 지원자가 있다면 반드시 이름을 언급하세요.\n\n" +
-                        "[컨텍스트]\n" + context + "\n\n[질문]\n" + question;
+        // 3. Spring AI ChatClient를 이용한 답변 생성 (툴 호출 포함)
+        String answer = chatClient.prompt()
+                .user(u -> u.text("아래 정보를 바탕으로 질문에 답하세요.\n\n" +
+                                "[참고 지원자 정보]\n{context}\n\n" +
+                                "[이전 대화 내역]\n{history}\n\n" +
+                                "[사용자 질문]\n{question}")
+                        .param("context", context.isEmpty() ? "(검색 결과 없음)" : context)
+                        .param("history", historyContext.isEmpty() ? "(이력 없음)" : historyContext)
+                        .param("question", question))
+                .call()
+                .content();
 
-        String answer = chatModel.chat(prompt);
+        // 4. 대화 내역 저장
+        chatMessageRepository.save(ChatMessage.builder().userId(userId).role("USER").content(question).build());
+        chatMessageRepository.save(ChatMessage.builder().userId(userId).role("AI").content(answer).build());
+
         return Map.of("answer", answer, "sources", results);
+    }
+
+    public List<ChatMessage> getChatHistory(String userId) {
+        return chatMessageRepository.findRecentMessagesAsc(userId, 20);
+    }
+
+    public void clearChatHistory(String userId) {
+        log.info("유저 {}의 대화 내역 초기화 시작", userId);
+        chatMessageRepository.deleteByUserId(userId);
     }
 }

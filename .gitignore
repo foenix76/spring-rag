@@ -185,8 +185,12 @@ installedFiles
 *.war.original
 # AI Models
 *.onnx
+models/
 multilingual-e5-base-onnx/
 src/main/resources/models/multilingual-e5-base/*
+
+# Debug Logs
+server_debug.txt
 
 # Python Environment
 venv/

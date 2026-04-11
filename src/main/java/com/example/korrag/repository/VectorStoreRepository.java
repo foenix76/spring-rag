@@ -35,6 +35,13 @@ public class VectorStoreRepository {
                 acceptNo, name, essayType, chunkIndex, content, vectorString);
     }
 
+    public boolean existsVector(String acceptNo, String essayType) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM test.essay_vectors WHERE accept_no = ? AND essay_type = ?",
+                Integer.class, acceptNo, essayType);
+        return count != null && count > 0;
+    }
+
     public List<Map<String, Object>> searchSimilar(float[] queryEmbedding, int topK, double threshold) {
         String vectorString = floatArrayToVectorString(queryEmbedding);
 

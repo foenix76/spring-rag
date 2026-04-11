@@ -2,6 +2,9 @@ server:
   port: 8091
 
 spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.ollama.autoconfigure.OllamaChatAutoConfiguration
   datasource:
     url: jdbc:postgresql://localhost:5432/postgres?currentSchema=test,public
     username: postgres
@@ -16,23 +19,34 @@ spring:
         default_schema: test
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
-  # OpenAI API Key (환경변수에서 로드 권장)
+  # Spring AI 표준 설정 (OpenAI 호환 API - SiliconFlow 전용)
   ai:
-    openai:
-      api-key: ${OPENAI_API_KEY:none}
-
-# ==================== 애플리케이션 커스텀 설정 ====================
-app:
-  llm:
-    provider: SF-TEST   # LOCAL-OLLAMA | LOCAL-LLAMA | OPENAI | SF-TEST
     ollama:
-      base-url: http://localhost:11434
-      model: qwen2.5-14b-instruct:latest
-    llama:
-      base-url: http://localhost:8091  # llama-server 기본 포트
-    sf:
-      token: ${SF_TOKEN:sk-xhettimyfiwloviwafyyckdbkgriugurbyvtjckrgpndyqrh}
-      model: Qwen/Qwen2.5-7B-Instruct
+      chat:
+        enabled: false
+    openai:
+      api-key: ${SF_TOKEN:sk-xhettimyfiwloviwafyyckdbkgriugurbyvtjckrgpndyqrh}
+      base-url: https://api.siliconflow.com
+      chat:
+        options:
+          model: deepseek-ai/DeepSeek-V3
+    # HTTP 클라이언트 타임아웃 보강
+    retry:
+      initial-interval: 2s
+      max-interval: 10s
+      max-attempts: 3
+    mcp:
+      server:
+        enabled: true
+        name: HR-Recruitment-Hub-Agent
+        version: 2.0.0
+        protocol: STREAMABLE
+        request-timeout: 60s
+        streamable-http:
+          mcp-endpoint: /mcp
+
+# ==================== 애플리케이션 커스텀 설정 (RAG용) ====================
+app:
   embedding:
     model-path: models/multilingual-e5-base/model.onnx
     tokenizer-path: models/multilingual-e5-base/tokenizer.json

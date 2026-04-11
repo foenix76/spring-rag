@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>채용 에세이 RAG 검색</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sse.js@0.6.1/lib/sse.js"></script>
     <style>
         body { font-family: sans-serif; background: #f4f4f9; display: flex; flex-direction: column; height: 100vh; margin: 0; overflow: hidden; }
         #app { display: flex; flex-direction: column; height: 100vh; width: 100%; }
@@ -31,14 +32,13 @@
     </div>
     
     <div class="chat-box" ref="chatBox">
-        <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.type]">
+        <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.type, msg.loading ? 'loading' : '']">
             <div style="white-space: pre-wrap;">{{ msg.text }}</div>
             <div v-if="msg.sources" class="sources">
                 <strong>참고:</strong>
                 <span v-for="s in msg.sources"> {{ s.name }}({{ (s.similarity * 100).toFixed(1) }}%) </span>
             </div>
         </div>
-        <div v-if="isLoading" class="message bot loading">답변 생성 중...</div>
     </div>
 
     <div class="input-area">
@@ -68,7 +68,7 @@
                     if (history && history.length > 0) {
                         // 기존 환영 메시지 제거 (역사가 있다면)
                         messages.length = 0;
-                        history.reverse().forEach(m => {
+                        history.forEach(m => {
                             messages.push({
                                 type: m.role.toLowerCase() === 'ai' ? 'bot' : 'user',
                                 text: m.content
@@ -107,28 +107,72 @@
                 const text = userInput.value.trim();
                 if (!text || isLoading.value) return;
 
+                // 유저 메시지 추가
                 messages.push({ type: 'user', text: text });
                 userInput.value = '';
                 isLoading.value = true;
+                
+                // AI 답변용 메시지 생성 (초기 상태: 로딩 중)
+                const botMessage = reactive({ type: 'bot', text: '답변 생성 중...', loading: true, sources: null });
+                messages.push(botMessage);
+                
                 await scrollToBottom();
 
                 try {
-                    const response = await fetch('/api/chat', {
-                        method: 'POST',
+                    // ⭐️ 완벽한 JSON 스트리밍을 위한 sse.js 재도입
+                    const sse = new SSE('/api/chat', {
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: text })
+                        payload: JSON.stringify({ message: text }),
+                        method: 'POST'
                     });
-                    const data = await response.json();
-                    messages.push({ 
-                        type: 'bot', 
-                        text: data.answer, 
-                        sources: data.sources 
+
+                    let isFirstChunk = true;
+
+                    sse.addEventListener('message', (e) => {
+                        try {
+                            // JSON 객체 파싱 (ChatResponse 구조)
+                            const response = JSON.parse(e.data);
+                            let content = '';
+                            
+                            // Spring AI ChatResponse 내부 구조 탐색 (버전에 따라 content 또는 text 사용)
+                            if (response.result && response.result.output) {
+                                content = response.result.output.content || response.result.output.text || '';
+                            }
+                            
+                            if (isFirstChunk && content !== '') {
+                                botMessage.text = content;
+                                botMessage.loading = false;
+                                isFirstChunk = false;
+                            } else if (!isFirstChunk && content !== '') {
+                                // ⭐️ JSON 파싱이라 띄어쓰기, 개행 100% 원본 그대로 보존됨
+                                botMessage.text += content;
+                            }
+                            scrollToBottom();
+                        } catch (err) {
+                            console.error('JSON Parse Error:', err, e.data);
+                        }
                     });
+
+                    sse.addEventListener('error', (e) => {
+                        console.error('SSE Error:', e);
+                        botMessage.text = '오류가 발생했습니다: ' + (e.data || '서버 응답 오류');
+                        botMessage.loading = false;
+                        isLoading.value = false;
+                    });
+
+                    sse.addEventListener('readystatechange', (e) => {
+                        if (e.readyState === 2) { // CLOSED
+                            isLoading.value = false;
+                            scrollToBottom();
+                        }
+                    });
+
+                    sse.stream();
+
                 } catch (e) {
-                    messages.push({ type: 'bot', text: '오류가 발생했습니다: ' + e.message });
-                } finally {
+                    botMessage.text = '오류가 발생했습니다: ' + e.message;
+                    botMessage.loading = false;
                     isLoading.value = false;
-                    await scrollToBottom();
                 }
             };
 

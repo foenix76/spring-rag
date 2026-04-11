@@ -1,0 +1,395 @@
+data:현
+
+data:재
+
+data: 사용
+
+data:할
+
+data: 수
+
+data: 있는
+
+data: 도
+
+data:구
+
+data: 목
+
+data:록
+
+data:은
+
+data: 다음과
+
+data: 같
+
+data:습니다
+
+data::
+data:
+data:
+
+data:---
+data:
+data:
+
+data:###
+
+data: 
+
+data:1
+
+data:.
+
+data: **
+
+data:n
+
+data:avigate
+
+data:To
+
+data:**
+data:
+
+data:-
+
+data: **
+
+data:기
+
+data:능
+
+data:**:
+
+data: 인
+
+data:사
+
+data: 시스템
+
+data:의
+
+data: 특
+
+data:정
+
+data: 화
+
+data:면
+
+data:으로
+
+data: 이동
+
+data:합니다
+
+data:.
+data:
+
+data:-
+
+data: **
+
+data:대
+
+data:상
+
+data: 화
+
+data:면
+
+data:**
+
+data::
+data:
+
+data: 
+
+data: -
+
+data: `
+
+data:c
+
+data:andidate
+
+data:_list
+
+data:`:
+
+data: 후
+
+data:보
+
+data:자
+
+data: 목
+
+data:록
+
+data: 화
+
+data:면
+
+data:.
+
+data: 지원
+
+data:자
+
+data:들의
+
+data: 기본
+
+data: 정보
+
+data:,
+
+data: 지원
+
+data:서
+
+data:,
+
+data: 평가
+
+data: 결과
+
+data: 등을
+
+data: 확인
+
+data:할
+
+data: 수
+
+data: 있습니다
+
+data:.
+data:
+
+data: 
+
+data: -
+
+data: `
+
+data:sche
+
+data:dule
+
+data:`:
+
+data: 면
+
+data:접
+
+data: 일
+
+data:정
+
+data: 관리
+
+data: 화
+
+data:면
+
+data:.
+
+data: 면
+
+data:접
+
+data: 일
+
+data:정
+
+data: 조
+
+data:정
+
+data: 또는
+
+data: 새로운
+
+data: 일
+
+data:정
+
+data: 추가
+
+data:가
+
+data: 가능
+
+data:합니다
+
+data:.
+data:
+
+data: 
+
+data: -
+
+data: `
+
+data:report
+
+data:`:
+
+data: 통
+
+data:계
+
+data: 보고
+
+data:서
+
+data: 화
+
+data:면
+
+data:.
+
+data: 채
+
+data:용
+
+data: 진행
+
+data: 현
+
+data:황
+
+data: 및
+
+data: 지원
+
+data:자
+
+data: 통
+
+data:계
+
+data: 등을
+
+data: 확인
+
+data:할
+
+data: 수
+
+data: 있습니다
+
+data:.
+data:
+
+data:-
+
+data: **
+
+data:사
+
+data:용
+
+data: 예
+
+data:시
+
+data:**
+
+data::
+data:
+
+data: 
+
+data: -
+
+data: "
+
+data:후
+
+data:보
+
+data:자
+
+data: 목
+
+data:록
+
+data: 화
+
+data:면
+
+data:으로
+
+data: 이동
+
+data:해
+
+data: 줘
+
+data:."
+data:
+
+data: 
+
+data: -
+
+data: "
+
+data:면
+
+data:접
+
+data: 일
+
+data:정
+
+data: 화
+
+data:면
+
+data:을
+
+data: 열
+
+data:어
+
+data:줘
+
+data:."
+data:
+data:
+
+data:---
+data:
+data:
+
+data:###
+
+data: 
+
+data:2
+
+data:.
+
+data: **
+
+data:send
+
+data:Result
+
+data:Email
+
+data:**
+data:
+
+data:-
+
+data: **
+
+data:기
+

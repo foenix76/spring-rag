@@ -11,7 +11,9 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.ChatModel;
+import reactor.core.publisher.Flux;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -122,6 +124,47 @@ public class RagService implements ApplicationRunner {
         chatMessageRepository.save(ChatMessage.builder().userId(userId).role("AI").content(answer).build());
 
         return Map.of("answer", answer, "sources", results);
+    }
+
+    public Flux<ChatResponse> askStream(String userId, String question) {
+        // 1. 대화 이력 조회 (최근 10개)
+        List<ChatMessage> history = chatMessageRepository.findRecentMessagesAsc(userId, 10);
+        String historyContext = history.stream()
+                .map(m -> String.format("%s: %s", m.getRole(), m.getContent()))
+                .collect(Collectors.joining("\n"));
+
+        // 2. RAG 검색
+        float[] queryVector = embeddingService.embedQuery(question);
+        List<Map<String, Object>> results = vectorRepository.searchSimilar(queryVector, topK, threshold);
+
+        String context = results.stream()
+                .map(r -> String.format("[%s(%s) %s]: %s", r.get("name"), r.get("accept_no"), r.get("essay_type"), r.get("content")))
+                .collect(Collectors.joining("\n\n"));
+
+        // 질문 저장
+        chatMessageRepository.save(ChatMessage.builder().userId(userId).role("USER").content(question).build());
+
+        // 3. 스트리밍 답변 생성 (ChatResponse 반환)
+        final StringBuilder fullAnswer = new StringBuilder();
+        return chatClient.prompt()
+                .user(u -> u.text("아래 정보를 바탕으로 질문에 답하세요.\n\n" +
+                                "[참고 지원자 정보]\n{context}\n\n" +
+                                "[이전 대화 내역]\n{history}\n\n" +
+                                "[사용자 질문]\n{question}")
+                        .param("context", context.isEmpty() ? "(검색 결과 없음)" : context)
+                        .param("history", historyContext.isEmpty() ? "(이력 없음)" : historyContext)
+                        .param("question", question))
+                .stream()
+                .chatResponse()
+                .doOnNext(response -> {
+                    if (response.getResult() != null && response.getResult().getOutput() != null && response.getResult().getOutput().getText() != null) {
+                        fullAnswer.append(response.getResult().getOutput().getText());
+                    }
+                })
+                .doOnComplete(() -> {
+                    // 답변 저장 (완료 시)
+                    chatMessageRepository.save(ChatMessage.builder().userId(userId).role("AI").content(fullAnswer.toString()).build());
+                });
     }
 
     public List<ChatMessage> getChatHistory(String userId) {

@@ -74,7 +74,16 @@
                     🤔 생각 중...
                     <span class="dot"></span><span class="dot"></span><span class="dot"></span>
                 </span>
-                <span v-else>{{ msg.text }}</span>
+                <span v-else>
+                    {{ renderMessage(msg.text) }}
+                    <div v-if="parseApproval(msg.text)" class="approval-area" style="margin-top: 10px; border-top: 1px dashed #ccc; padding-top: 10px;">
+                        <div style="font-weight: bold; color: #d9534f; margin-bottom: 8px;">⚠️ 이 작업은 사용자의 승인이 필요합니다.</div>
+                        <div style="display: flex; gap: 8px;">
+                            <button @click="approveAction(parseApproval(msg.text))" style="background: #28a745; font-size: 0.85rem; padding: 0.4rem 0.8rem;">승인 및 발송</button>
+                            <button @click="rejectAction(msg)" style="background: #dc3545; font-size: 0.85rem; padding: 0.4rem 0.8rem;">거절</button>
+                        </div>
+                    </div>
+                </span>
                 <span v-if="msg.status === 'typing' || (msg.status === 'thinking' && msg.type === 'bot')" class="cursor"></span>
             </div>
             <div v-if="msg.sources" class="sources">
@@ -85,8 +94,8 @@
     </div>
 
     <div class="input-area">
-        <input type="text" ref="userInputField" v-model="userInput" @keyup.enter="sendMessage" placeholder="질문을 입력하세요... (예: 테슬라 언급한 지원자)" :disabled="isLoading">
-        <button @click="sendMessage" :disabled="isLoading || !userInput.trim()">전송</button>
+        <input type="text" ref="userInputField" v-model="userInput" @keyup.enter="sendMessage()" placeholder="질문을 입력하세요... (예: 테슬라 언급한 지원자)" :disabled="isLoading">
+        <button @click="sendMessage()" :disabled="isLoading || !userInput.trim()">전송</button>
     </div>
 </div>
 
@@ -147,12 +156,39 @@
                 }
             };
 
-            const sendMessage = async () => {
+            const renderMessage = (text) => {
+                // 승인 토큰은 텍스트에서 숨김 처리
+                return text.replace(/\[APPROVAL_REQUIRED:.*?\]/g, '').trim();
+            };
+
+            const parseApproval = (text) => {
+                const match = text.match(/\[APPROVAL_REQUIRED:(EMAIL):(.+?):(.+?)\]/);
+                if (match) {
+                    return { type: match[1], candidateId: match[2], resultType: match[3] };
+                }
+                return null;
+            };
+
+            const approveAction = async (payload) => {
+                const confirmMsg = `시스템 지시: 후보자 ${payload.candidateId}에게 ${payload.resultType} 메일 발송을 승인합니다. sendResultEmail 툴을 confirmed=true 옵션으로 즉시 실행하세요.`;
+                userInput.value = confirmMsg;
+                await sendMessage(true); // 시스템 메시지임을 표시하기 위해 true 전달 (UI에서는 숨길 수 있음)
+            };
+
+            const rejectAction = (msg) => {
+                msg.text = "메일 발송이 사용자에 의해 거절되었습니다.";
+                // 추가적인 로직 필요시 구현
+            };
+
+            const sendMessage = async (isSystemAction = false) => {
                 const text = userInput.value.trim();
                 if (!text || isLoading.value) return;
 
-                // 유저 메시지 추가
-                messages.push({ type: 'user', text: text, status: 'idle' });
+                // 유저 메시지 추가 (시스템 액션이 아닐 때만 화면에 표시)
+                if (!isSystemAction) {
+                    messages.push({ type: 'user', text: text, status: 'idle' });
+                }
+                
                 userInput.value = '';
                 isLoading.value = true;
                 
@@ -265,7 +301,11 @@
                 userInputField,
                 sendMessage,
                 scrollToBottom,
-                clearHistory
+                clearHistory,
+                renderMessage,
+                parseApproval,
+                approveAction,
+                rejectAction
             };
         }
     }).mount('#app');

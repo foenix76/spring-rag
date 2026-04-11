@@ -81,12 +81,10 @@ public class OnnxRerankService {
 
         long[][] inputIdsBatch = {truncatedInputIds};
         long[][] attentionMaskBatch = {truncatedAttentionMask};
-        long[][] typeIdsBatch = {truncatedTypeIds};
 
         Map<String, OnnxTensor> inputs = new HashMap<>();
         inputs.put("input_ids", OnnxTensor.createTensor(env, inputIdsBatch));
         inputs.put("attention_mask", OnnxTensor.createTensor(env, attentionMaskBatch));
-        inputs.put("token_type_ids", OnnxTensor.createTensor(env, typeIdsBatch));
 
         try (OrtSession.Result result = session.run(inputs)) {
             // BGE-Reranker-v2-m3의 출력은 보통 [batch_size, 1] 형태의 logit

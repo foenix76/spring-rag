@@ -30,7 +30,7 @@ public class OnnxEmbeddingConfig {
         return OrtEnvironment.getEnvironment();
     }
 
-    @Bean
+    @Bean(name = "ortSession")
     public OrtSession ortSession(OrtEnvironment env) throws OrtException, IOException {
         Path path = java.nio.file.Paths.get(modelPath);
         if (!java.nio.file.Files.exists(path)) {
@@ -43,7 +43,7 @@ public class OnnxEmbeddingConfig {
         return env.createSession(modelBytes, opts);
     }
 
-    @Bean
+    @Bean(name = "huggingFaceTokenizer")
     public HuggingFaceTokenizer huggingFaceTokenizer() throws IOException {
         Path path = java.nio.file.Paths.get(tokenizerPath);
         if (!java.nio.file.Files.exists(path)) {

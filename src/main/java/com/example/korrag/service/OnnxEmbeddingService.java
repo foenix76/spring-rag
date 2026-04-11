@@ -8,6 +8,7 @@ import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -26,8 +27,8 @@ public class OnnxEmbeddingService {
 
     public OnnxEmbeddingService(
             OrtEnvironment env,
-            OrtSession session,
-            HuggingFaceTokenizer tokenizer,
+            @Qualifier("ortSession") OrtSession session,
+            @Qualifier("huggingFaceTokenizer") HuggingFaceTokenizer tokenizer,
             @Value("${app.embedding.max-token-length}") int maxTokenLength) {
         this.env = env;
         this.session = session;

@@ -1612,7 +1612,15 @@
                                 }
                             });
 
-                            messages.push(...msgs);
+                            // 3-Pass: 시스템 내부 처리용 트리거 메시지는 UI 표시에서 제외
+                            const cleanMsgs = msgs.filter(msg => {
+                                if (msg.type === 'user' && (msg.text.includes('[시스템 승인]') || msg.text.includes('[시스템 취소]'))) {
+                                    return false;
+                                }
+                                return true;
+                            });
+
+                            messages.push(...cleanMsgs);
 
                         } else {
                             // 빈 히스토리면 웰컴 메시지

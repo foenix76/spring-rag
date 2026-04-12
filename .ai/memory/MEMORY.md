@@ -47,3 +47,7 @@ All AI-related files must stay within the `.ai/` directory.
   - Populated 100 sample applicants (400 items) into vector DB.
   - Optimized Git repo size (1.5GB -> 1MB) by pruning temporary garbage files.
   - Fixed frontend Vue 3 'this' context issues and server token authentication.
+- [2026-04-12] HR 툴 호출 안정화 및 UI/UX 고도화 완료.
+  - **Tool Stability**: 일괄 메일 발송 파라미터를 String[]으로 변경하여 LLM 인식률 최적화 및 툴 호출 환각 박멸.
+  - **Agentic Logic**: 승인 카드 출력 시 RAG 검색 결과(지원자 목록)가 생략되지 않도록 시스템 프롬프트 보강.
+  - **UI/UX**: 스트리밍 중 입력창 활성화, 전송 버튼 스피너 제거, 승인 카드를 텍스트 출력 완료 후에만 노출되도록 지연 로직 적용.

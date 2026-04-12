@@ -1719,9 +1719,11 @@
                     messages.push(botMsg);
                     scrollToBottom();
 
-                    // 타이핑 이펙트용 버퍼
+                    // 타이핑 이펙트용 버퍼 및 지연 노출용 토큰
                     let textBuffer = '';
                     let renderCursor = 0;
+                    let pendingApprovalToken = null;
+
                     const typingTimer = setInterval(() => {
                         if (renderCursor < textBuffer.length) {
                             botMsg.status = 'typing';
@@ -1730,6 +1732,13 @@
                         } else if (!isLoading.value) {
                             clearInterval(typingTimer);
                             botMsg.status = 'idle';
+
+                            // [지연 노출] 스트리밍이 완전히 끝나고 타이핑도 완료된 시점에만 승인 카드 노출
+                            if (pendingApprovalToken) {
+                                botMsg.approvalToken = pendingApprovalToken;
+                                nextTick(() => scrollToBottom());
+                            }
+
                             // processingTaskId 클리어
                             messages.forEach(m => { if (m.processingTaskId) delete m.processingTaskId; });
                         }
@@ -1773,10 +1782,9 @@
                             }
 
 
-                            // approval 채널 → 승인 카드
+                            // approval 채널 → 승인 카드 (즉시 노출하지 않고 버퍼에 저장)
                             if (res.approval) {
-                                botMsg.approvalToken = res.approval;
-                                scrollToBottom();
+                                pendingApprovalToken = res.approval;
                             }
 
                             // completed 채널 → 완료 상태 업데이트

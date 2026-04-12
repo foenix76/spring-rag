@@ -28,11 +28,11 @@ public class HrNavigationTools {
 
     @Tool(description = """
             HR 시스템 내 특정 화면으로 이동합니다.
-            가능한 이동 대상: candidate_list(후보자 목록), schedule(면접 일정), report(통계 보고서), job_postings(채용공고)
+            가능한 이동 대상: dashboard(대시보드), candidate_list(후보자 목록), schedule(면접 일정), report(통계 보고서), job_postings(채용공고)
             """)
     public String navigateTo(
             @ToolParam(description = "필수: 현재 대화중인 사용자의 ID ('HR_USER_01')") String userId,
-            @ToolParam(description = "이동할 화면: candidate_list | schedule | report | job_postings") String target) {
+            @ToolParam(description = "이동할 화면: dashboard | candidate_list | schedule | report | job_postings") String target) {
         log.info("[AI ACTION] navigateTo 호출: target={}", target);
 
         String menuName = switch (target) {

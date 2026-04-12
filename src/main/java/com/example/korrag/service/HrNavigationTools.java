@@ -51,11 +51,14 @@ public class HrNavigationTools {
             default               -> "/dashboard";
         };
 
-        // UI에 NAVIGATE 토큰을 시스템 이벤트로 직접 발송
-        String token = String.format("[NAVIGATE:%s]", url);
-        toolEventPublisher.publishEvent(userId, java.util.Map.of("navigate", token));
+        // UI에 화면 이동 이벤트(URL 포함)를 직접 발송 (파싱 불필요)
+        java.util.Map<String, Object> navData = new java.util.HashMap<>();
+        navData.put("url", url);
+        navData.put("message", menuName + " 화면으로 이동합니다.");
+        
+        toolEventPublisher.publishEvent(userId, java.util.Map.of("navigate", navData));
 
-        // LLM에게는 화면 이동 처리가 되었다고 텍스트만 전달 (괄호 토큰 포함 금지)
+        // LLM에게는 화면 이동 처리가 되었다고 텍스트만 전달
         return String.format("사용자에게 %s 화면으로 이동하는 명령을 브라우저 시스템 채널로 성공적으로 전송했습니다.", menuName);
     }
 }

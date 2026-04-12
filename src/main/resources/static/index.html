@@ -3,186 +3,1376 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>채용 에세이 RAG 검색</title>
+    <title>HR 채용 에세이 RAG 시스템</title>
+    <meta name="description" content="AI 기반 채용 에세이 검색 및 HR 액션 자동화 시스템">
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sse.js@0.6.1/lib/sse.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        :root { --primary: #1a73e8; --bg: #f8f9fa; --bot-msg: #ffffff; --user-msg: #1a73e8; }
-        body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; padding: 0; height: 100vh; overflow: hidden; }
-        #app { display: flex; flex-direction: column; height: 100vh; }
-        .header { background: var(--primary); color: white; padding: 1rem 1.5rem; text-align: center; font-size: 1.25rem; font-weight: 700; display: flex; justify-content: center; align-items: center; position: relative; box-shadow: 0 2px 10px rgba(0,0,0,0.1); flex-shrink: 0; }
-        .reset-btn { position: absolute; right: 1rem; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 0.4rem 0.8rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer; transition: 0.2s; }
-        .reset-btn:hover { background: rgba(255,255,255,0.3); }
-        .chat-box { flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
-        .message { max-width: 80%; padding: 0.8rem 1rem; border-radius: 1rem; line-height: 1.5; font-size: 0.95rem; position: relative; }
-        .message.user { align-self: flex-end; background: var(--user-msg); color: white; border-bottom-right-radius: 0.2rem; }
-        .message.bot { align-self: flex-start; background: var(--bot-msg); color: #333; border: 1px solid #eef0f2; border-bottom-left-radius: 0.2rem; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        .message-system { align-self: center; width: 90%; text-align: center; font-size: 0.75rem; color: #888; opacity: 0.6; margin: 0.5rem 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
-        .message-system::before, .message-system::after { content: ""; flex: 1; height: 1px; background: linear-gradient(to right, transparent, #ddd, transparent); }
-        .sources { font-size: 0.8rem; color: #777; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed #eee; }
-        .input-area { padding: 1rem; background: white; border-top: 1px solid #eee; display: flex; gap: 0.5rem; flex-shrink: 0; }
-        input { flex: 1; padding: 0.75rem 1rem; border: 1px solid #ddd; border-radius: 25px; outline: none; font-size: 1rem; }
-        input:focus { border-color: var(--primary); }
-        .send-btn { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 25px; font-weight: 600; cursor: pointer; }
-        .send-btn:disabled { background: #ccc; }
-        .cursor { display: inline-block; width: 2px; height: 1rem; background: var(--primary); margin-left: 4px; vertical-align: middle; animation: blink 1s infinite; }
+        /* ============================================================
+         * 디자인 시스템 토큰
+         * ============================================================ */
+        :root {
+            --primary:        #4f46e5;
+            --primary-hover:  #4338ca;
+            --primary-light:  #eef2ff;
+            --success:        #10b981;
+            --success-light:  #d1fae5;
+            --warning:        #f59e0b;
+            --danger:         #ef4444;
+            --bg:             #f0f2f5;
+            --surface:        #ffffff;
+            --border:         #e5e7eb;
+            --text-primary:   #111827;
+            --text-secondary: #6b7280;
+            --text-muted:     #9ca3af;
+            --sidebar-bg:     #1e1e2e;
+            --sidebar-text:   #cdd6f4;
+            --shadow-sm:      0 1px 3px rgba(0,0,0,0.08);
+            --shadow-md:      0 4px 16px rgba(0,0,0,0.12);
+            --shadow-lg:      0 8px 32px rgba(0,0,0,0.16);
+            --radius-sm:      0.5rem;
+            --radius-md:      0.75rem;
+            --radius-lg:      1rem;
+            --radius-xl:      1.25rem;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ============================================================
+         * 레이아웃
+         * ============================================================ */
+        #app {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* --- 사이드바 --- */
+        .sidebar {
+            width: 260px;
+            background: var(--sidebar-bg);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            padding: 1.25rem 1rem;
+            gap: 0.5rem;
+        }
+
+        .sidebar-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 0.5rem 1.25rem;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            margin-bottom: 0.5rem;
+        }
+
+        .sidebar-logo-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--primary);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1rem;
+        }
+
+        .sidebar-logo-text {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.2;
+        }
+
+        .sidebar-logo-text small {
+            display: block;
+            font-size: 0.7rem;
+            font-weight: 400;
+            color: var(--sidebar-text);
+            opacity: 0.7;
+        }
+
+        .sidebar-section-label {
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: rgba(255,255,255,0.3);
+            padding: 0.75rem 0.5rem 0.25rem;
+        }
+
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.65rem 0.75rem;
+            border-radius: var(--radius-sm);
+            color: var(--sidebar-text);
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            text-decoration: none;
+        }
+
+        .sidebar-item:hover,
+        .sidebar-item.active {
+            background: rgba(255,255,255,0.08);
+            color: #fff;
+        }
+
+        .sidebar-item i { width: 16px; text-align: center; opacity: 0.7; }
+        .sidebar-spacer { flex: 1; }
+
+        .sidebar-reset-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.65rem 0.75rem;
+            border-radius: var(--radius-sm);
+            background: rgba(239,68,68,0.15);
+            color: #fca5a5;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            width: 100%;
+            transition: background 0.15s;
+        }
+
+        .sidebar-reset-btn:hover {
+            background: rgba(239,68,68,0.25);
+        }
+
+        /* --- 메인 콘텐츠 --- */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        /* 상단: 채팅 패널 (고정 50%) */
+        .chat-panel {
+            display: flex;
+            flex-direction: column;
+            height: 50vh;
+            min-height: 0;
+            border-bottom: 2px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        /* 하단: 콘텐츠 패널 (미랬는 50%) */
+        .bottom-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--bg);
+        }
+
+        /* --- 헤더 --- */
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0.875rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .header-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .header-subtitle {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 1px;
+        }
+
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.75rem;
+            color: var(--success);
+            font-weight: 500;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16,185,129,0.3); }
+            50%       { opacity: 0.8; box-shadow: 0 0 0 4px rgba(16,185,129,0); }
+        }
+
+        /* --- 채팅 영역 --- */
+        .chat-box {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.75rem 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            scroll-behavior: smooth;
+            min-height: 0;
+        }
+
+        .chat-box::-webkit-scrollbar { width: 4px; }
+        .chat-box::-webkit-scrollbar-track { background: transparent; }
+        .chat-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+        /* --- 메시지 --- */
+        .message-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+
+        .message {
+            max-width: 75%;
+            padding: 0.875rem 1.125rem;
+            border-radius: var(--radius-lg);
+            line-height: 1.6;
+            font-size: 0.9rem;
+            position: relative;
+            animation: msgIn 0.2s ease-out;
+        }
+
+        @keyframes msgIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: var(--primary);
+            color: white;
+            border-bottom-right-radius: 0.25rem;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .message.bot {
+            align-self: flex-start;
+            background: var(--surface);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 0.25rem;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .message-time {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            align-self: flex-end;
+        }
+
+        .message.user + .message-time { align-self: flex-end; }
+        .message.bot + .message-time  { align-self: flex-start; }
+
+        /* --- 시스템 로그 메시지 --- */
+        .message-system {
+            align-self: center;
+            max-width: 90%;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.9rem;
+            background: rgba(79,70,229,0.06);
+            border: 1px solid rgba(79,70,229,0.15);
+            border-radius: 99px;
+            font-size: 0.75rem;
+            color: var(--primary);
+            animation: msgIn 0.2s ease-out;
+        }
+        .message-system i { font-size: 0.7rem; }
+
+        /* --- 타이핑 인디케이터 --- */
+        .thinking-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            font-style: italic;
+            padding: 0.5rem 0;
+        }
+
+        .thinking-dots { display: flex; gap: 4px; align-items: center; }
+        .thinking-dots span {
+            width: 6px; height: 6px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            animation: dotBounce 1.4s ease-in-out infinite both;
+        }
+        .thinking-dots span:nth-child(2) { animation-delay: 0.18s; }
+        .thinking-dots span:nth-child(3) { animation-delay: 0.36s; }
+
+        @keyframes dotBounce {
+            0%, 80%, 100% { transform: scale(0.7); opacity: 0.5; }
+            40%           { transform: scale(1);   opacity: 1; }
+        }
+
+        /* --- 타이핑 커서 --- */
+        .typing-cursor {
+            display: inline-block;
+            width: 2px; height: 1.1em;
+            background: var(--primary);
+            margin-left: 2px;
+            vertical-align: middle;
+            animation: blink 1s step-end infinite;
+        }
+
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-        .thinking { font-style: italic; color: #aaa; display: flex; align-items: center; gap: 5px; }
-        .dot { width: 4px; height: 4px; background: #bbb; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
-        .dot:nth-child(2) { animation-delay: 0.2s; }
-        .dot:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
-        .approval-card { margin-top: 1rem; padding: 1rem; border: 1px solid #e0e7ff; background: #f5f3ff; border-radius: 0.75rem; }
-        .btn-group { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
-        .btn { flex: 1; padding: 0.6rem; border-radius: 0.5rem; border: none; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
-        .btn-primary { background: #4f46e5; color: white; }
-        .btn-secondary { background: white; border: 1px solid #ddd; color: #666; }
+
+        /* --- 승인 카드 --- */
+        .approval-card {
+            margin-top: 0.875rem;
+            padding: 1rem 1.125rem;
+            background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+            border: 1.5px solid rgba(109,40,217,0.2);
+            border-radius: var(--radius-md);
+            animation: cardSlideIn 0.3s ease-out;
+        }
+
+        @keyframes cardSlideIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .approval-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.65rem;
+        }
+
+        .approval-header i { color: #7c3aed; font-size: 0.9rem; }
+
+        .approval-title {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #5b21b6;
+        }
+
+        .approval-task-id {
+            margin-left: auto;
+            font-size: 0.7rem;
+            background: rgba(109,40,217,0.1);
+            color: #7c3aed;
+            padding: 0.2rem 0.5rem;
+            border-radius: 99px;
+            font-family: monospace;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 0.55rem 1rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.82rem;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+        }
+
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-approve {
+            background: var(--primary);
+            color: white;
+        }
+        .btn-approve:hover:not(:disabled) {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .btn-cancel {
+            background: white;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+        }
+        .btn-cancel:hover:not(:disabled) {
+            background: #fef2f2;
+            color: var(--danger);
+            border-color: #fca5a5;
+        }
+
+        .action-processing {
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--primary);
+            padding: 0.5rem;
+            animation: fadePulse 1s ease-in-out infinite;
+        }
+
+        @keyframes fadePulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+
+        .action-completed {
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--success);
+            font-weight: 600;
+            padding: 0.4rem;
+            background: var(--success-light);
+            border-radius: var(--radius-sm);
+        }
+
+        .action-cancelled {
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            padding: 0.4rem;
+        }
+
+        /* --- 입력창 --- */
+        .input-area {
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+            display: flex;
+            gap: 0.75rem;
+            align-items: flex-end;
+            flex-shrink: 0;
+        }
+
+        .input-wrapper {
+            flex: 1;
+            position: relative;
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 0.75rem 1.25rem;
+            border: 1.5px solid var(--border);
+            border-radius: 99px;
+            outline: none;
+            font-size: 0.9rem;
+            font-family: inherit;
+            background: var(--bg);
+            color: var(--text-primary);
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .input-field:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
+            background: white;
+        }
+
+        .input-field:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .send-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: white;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            transition: all 0.15s;
+            flex-shrink: 0;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .send-btn:hover:not(:disabled) {
+            background: var(--primary-hover);
+            transform: scale(1.05);
+            box-shadow: var(--shadow-md);
+        }
+
+        .send-btn:disabled {
+            background: var(--text-muted);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ============================================================
+         * Toast 알림 (navigateTo 전용)
+         * ============================================================ */
+        .toast-container {
+            position: fixed;
+            bottom: 5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: var(--sidebar-bg);
+            color: #e2e8f0;
+            padding: 0.75rem 1.25rem;
+            border-radius: var(--radius-md);
+            font-size: 0.82rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            box-shadow: var(--shadow-lg);
+            animation: toastIn 0.3s ease-out;
+            min-width: 260px;
+            max-width: 400px;
+        }
+
+        .toast.toast-leaving {
+            animation: toastOut 0.3s ease-in forwards;
+        }
+
+        .toast-icon {
+            width: 28px;
+            height: 28px;
+            background: rgba(79,70,229,0.3);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+            color: #818cf8;
+            flex-shrink: 0;
+        }
+
+        .toast-content { flex: 1; }
+        .toast-title { font-weight: 600; font-size: 0.8rem; color: #f1f5f9; }
+        .toast-url { font-size: 0.7rem; color: #818cf8; font-family: monospace; margin-top: 1px; }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(12px) scale(0.95); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        @keyframes toastOut {
+            from { opacity: 1; transform: translateY(0) scale(1); }
+            to   { opacity: 0; transform: translateY(-8px) scale(0.95); }
+        }
+
+        /* ============================================================
+         * 페이지 뷰 (하단 패널)
+         * ============================================================ */
+        .page-view {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem 1.5rem;
+            animation: pageIn 0.2s ease-out;
+        }
+
+        @keyframes pageIn {
+            from { opacity: 0; transform: translateX(8px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+
+        .page-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 0.25rem;
+        }
+
+        .page-subtitle {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 1.5rem;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--surface);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+            font-size: 0.85rem;
+        }
+
+        .data-table th {
+            background: #f8fafc;
+            padding: 0.75rem 1rem;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .data-table td {
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid #f3f4f6;
+            color: var(--text-primary);
+            vertical-align: middle;
+        }
+
+        .data-table tr:last-child td { border-bottom: none; }
+        .data-table tr:hover td { background: #fafafa; }
+
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.55rem;
+            border-radius: 99px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .badge-pass   { background: #d1fae5; color: #065f46; }
+        .badge-fail   { background: #fee2e2; color: #991b1b; }
+        .badge-review { background: #fef3c7; color: #92400e; }
+        .badge-new    { background: #ede9fe; color: #5b21b6; }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-card {
+            background: var(--surface);
+            padding: 1.25rem 1.5rem;
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        .schedule-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .schedule-card {
+            background: var(--surface);
+            border-radius: var(--radius-md);
+            padding: 1rem 1.25rem;
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+        }
+
+        .schedule-date {
+            width: 52px;
+            height: 52px;
+            background: var(--primary-light);
+            border-radius: var(--radius-sm);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .schedule-date-day { font-size: 1.25rem; font-weight: 700; color: var(--primary); line-height: 1; }
+        .schedule-date-mon { font-size: 0.65rem; color: var(--primary); font-weight: 500; }
+
+        .schedule-info { flex: 1; }
+        .schedule-name { font-weight: 600; font-size: 0.9rem; }
+        .schedule-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+
+        .job-card {
+            background: var(--surface);
+            border-radius: var(--radius-md);
+            padding: 1.25rem 1.5rem;
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .job-icon {
+            width: 44px;
+            height: 44px;
+            background: var(--primary-light);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary);
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+
+        .job-title { font-weight: 600; font-size: 0.9rem; }
+        .job-meta  { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+
+        .navigate-banner {
+            background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+            border: 1px solid rgba(79,70,229,0.2);
+            border-radius: var(--radius-md);
+            padding: 0.75rem 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+            font-size: 0.82rem;
+            color: #5b21b6;
+        }
+
+        /* ============================================================
+         * 반응형 (모바일)
+         * ============================================================ */
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .stat-grid { grid-template-columns: repeat(2, 1fr); }
+        }
     </style>
 </head>
 <body>
 <div id="app">
-    <div class="header">
-        채용 에세이 RAG 검색 시스템
-        <button class="reset-btn" @click="clearHistory">초기화</button>
-    </div>
-    <div class="chat-box" ref="chatBox">
-        <div v-for="(msg, idx) in messages" :key="idx" style="display: contents;">
-            <div v-if="msg.systemLogs && msg.systemLogs.length > 0" class="message-system">
-                <div v-for="log in msg.systemLogs" :key="log" style="margin: 2px 0;">
-                    <i class="fas fa-terminal"></i> {{ (log || '').replace(/\[COMPLETED:[^\]]*\]/g, '').trim() }}
+    <!-- 사이드바 -->
+    <aside class="sidebar">
+        <div class="sidebar-logo">
+            <div class="sidebar-logo-icon"><i class="fas fa-robot"></i></div>
+            <div class="sidebar-logo-text">
+                HR AI Agent
+                <small>채용 에세이 RAG 시스템</small>
+            </div>
+        </div>
+
+        <div class="sidebar-section-label">메뉴</div>
+        <div :class="['sidebar-item', currentView === 'dashboard' ? 'active' : '']" @click="navigateView('dashboard')">
+            <i class="fas fa-th-large"></i>대시보드
+        </div>
+        <div :class="['sidebar-item', currentView === 'candidates' ? 'active' : '']" @click="navigateView('candidates')">
+            <i class="fas fa-users"></i>후보자 목록
+        </div>
+        <div :class="['sidebar-item', currentView === 'schedule' ? 'active' : '']" @click="navigateView('schedule')">
+            <i class="fas fa-calendar-alt"></i>면접 일정
+        </div>
+        <div :class="['sidebar-item', currentView === 'report' ? 'active' : '']" @click="navigateView('report')">
+            <i class="fas fa-chart-bar"></i>채용 통계
+        </div>
+        <div :class="['sidebar-item', currentView === 'jobs' ? 'active' : '']" @click="navigateView('jobs')">
+            <i class="fas fa-briefcase"></i>채용공고
+        </div>
+
+        <div class="sidebar-spacer"></div>
+
+        <div class="sidebar-section-label">설정</div>
+        <div class="sidebar-item"><i class="fas fa-cog"></i>환경 설정</div>
+        <button type="button" class="sidebar-reset-btn" id="resetBtn" @click.prevent="clearHistory">
+            <i class="fas fa-trash-alt"></i>대화 초기화
+        </button>
+    </aside>
+
+    <!-- 메인 콘텐츠 -->
+    <div class="main-content">
+        <!-- 헤더 -->
+        <div class="header">
+            <div style="display:flex; align-items:center; gap:0.75rem;">
+                <div>
+                    <div class="header-title">HR AI 에이전트 대시보드</div>
+                    <div class="header-subtitle">AI 기반 지원자 분석 및 HR 자동화</div>
+                </div>
+                <div style="height:20px; width:1px; background:var(--border); margin:0 0.25rem;"></div>
+                <div style="font-size:0.75rem; color:var(--text-muted);">
+                    <i class="fas fa-chevron-right" style="font-size:0.6rem; margin-right:4px;"></i>
+                    <span style="color:var(--primary); font-weight:600;">{{ viewMeta[currentView].label }}</span>
                 </div>
             </div>
-            <div v-if="msg.status === 'thinking' || msg.status === 'typing' || renderMessage(msg.text) || msg.approvalToken" :class="['message', msg.type]">
-                <div v-if="msg.status === 'thinking'" class="thinking">
-                    😊 열심히 생각 중... <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-                </div>
-                <div v-else>
-                    <span v-html="renderMessage(msg.text)"></span>
-                    <span v-if="msg.status === 'typing' || (msg.type === 'bot' && idx === messages.length - 1 && !msg.approvalToken)" class="cursor"></span>
-                    <div v-if="msg.approvalToken" class="approval-card">
-                        <div class="flex items-center gap-2 mb-2">
-                            <i class="fas fa-envelope-open-text text-indigo-600"></i>
-                            <span class="font-bold text-sm">일괄 발송 승인 요청 (ID: {{getTaskId(msg.approvalToken)}})</span>
+            <div class="header-status">
+                <div class="status-dot"></div>
+                AI 연결됨
+            </div>
+        </div>
+
+        <!-- ═══ 상단: AI 채팅 패널 (고정) ═══ -->
+        <div class="chat-panel">
+            <div class="chat-box" ref="chatBox">
+                <template v-for="(msg, idx) in messages" :key="idx">
+                    <div v-if="msg.systemLogs && msg.systemLogs.length > 0">
+                        <div v-for="(slog, si) in msg.systemLogs" :key="si" class="message-system">
+                            <i class="fas fa-terminal"></i>{{ slog }}
                         </div>
-                        <div v-if="!msg.isRejected && !isActionCompleted(msg) && !isActionCancelled(msg)" class="btn-group">
-                            <div v-if="msg.processingTaskId" class="flex-1 text-center py-2 text-indigo-600 text-sm animate-pulse">
-                                <i class="fas fa-spinner fa-spin"></i> 처리 중...
+                    </div>
+                    <div v-if="msg.status === 'thinking' || msg.status === 'typing' || msg.text || msg.approvalToken" class="message-wrapper">
+                        <div :class="['message', msg.type]">
+                            <div v-if="msg.status === 'thinking'" class="thinking-indicator">
+                                <span>AI가 분석 중입니다</span>
+                                <div class="thinking-dots"><span></span><span></span><span></span></div>
                             </div>
-                            <template v-else>
-                                <button class="btn btn-primary" @click="approveAction(msg)" :disabled="isLoading">일괄 승인 및 발송</button>
-                                <button class="btn btn-secondary" @click="cancelAction(msg)" :disabled="isLoading">발송 취소</button>
-                            </template>
+                            <div v-else>
+                                <span v-html="renderText(msg.text)"></span>
+                                <span v-if="msg.status === 'typing'" class="typing-cursor"></span>
+                                <div v-if="msg.approvalToken" class="approval-card">
+                                    <div class="approval-header">
+                                        <i class="fas fa-envelope-open-text"></i>
+                                        <span class="approval-title">메일 발송 승인 요청</span>
+                                        <span class="approval-task-id">{{ getTaskId(msg.approvalToken) }}</span>
+                                    </div>
+                                    <div v-if="msg.processingTaskId" class="action-processing"><i class="fas fa-spinner fa-spin"></i> 처리 중...</div>
+                                    <div v-else-if="isCompleted(msg)" class="action-completed"><i class="fas fa-check-circle"></i> 발송 완료</div>
+                                    <div v-else-if="isCancelled(msg)" class="action-cancelled"><i class="fas fa-ban"></i> 취소된 작업입니다.</div>
+                                    <div v-else class="btn-group">
+                                        <button class="btn btn-approve" @click="approveAction(msg)" :disabled="isLoading" id="approveBtn"><i class="fas fa-paper-plane"></i> 승인 및 발송</button>
+                                        <button class="btn btn-cancel" @click="cancelAction(msg)" :disabled="isLoading" id="cancelBtn"><i class="fas fa-times"></i> 취소</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div v-else-if="msg.isRejected || isActionCancelled(msg)" class="text-center py-1 text-gray-400 text-xs">취소된 작업입니다.</div>
-                        <div v-else class="text-center py-1 text-green-600 text-xs font-bold">처리 완료 ✅</div>
+                    </div>
+                </template>
+            </div>
+            <!-- 입력창 -->
+            <div class="input-area">
+                <div class="input-wrapper">
+                    <input type="text" class="input-field" ref="userInputField" v-model="userInput"
+                        @keyup.enter="sendMessage()"
+                        placeholder="지원자 검색, 메일 발송, 화면 이동 등을 요청하세요..."
+                        :disabled="isLoading" id="chatInput" />
+                </div>
+                <button class="send-btn" @click="sendMessage()" :disabled="isLoading || !userInput.trim()" id="sendBtn">
+                    <i :class="isLoading ? 'fas fa-circle-notch fa-spin' : 'fas fa-paper-plane'"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- ═══ 하단: 콘텐츠 패널 (메뉴에 따라 교체) ═══ -->
+        <div class="bottom-panel">
+
+            <!-- 대시보드 인덱스 (기본) -->
+            <div class="page-view" v-if="currentView === 'dashboard'">
+                <div class="stat-grid">
+                    <div class="stat-card">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                            <div><div class="stat-value">127</div><div class="stat-label">전체 지원자</div></div>
+                            <div style="width:36px;height:36px;background:var(--primary-light);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--primary);"><i class="fas fa-users"></i></div>
+                        </div>
+                        <div style="font-size:0.72rem;color:var(--success);margin-top:0.5rem;"><i class="fas fa-arrow-up"></i> 저년 대비 +18%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                            <div><div class="stat-value">34</div><div class="stat-label">서류 통과</div></div>
+                            <div style="width:36px;height:36px;background:#fef3c7;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#d97706;"><i class="fas fa-file-alt"></i></div>
+                        </div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.5rem;">전체의 26.8%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                            <div><div class="stat-value">4</div><div class="stat-label">오늘 면접</div></div>
+                            <div style="width:36px;height:36px;background:#d1fae5;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#065f46;"><i class="fas fa-calendar-check"></i></div>
+                        </div>
+                        <div style="font-size:0.72rem;color:var(--warning);margin-top:0.5rem;"><i class="fas fa-clock"></i> 다음 면접 14:00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                            <div><div class="stat-value">12</div><div class="stat-label">코덱 대기</div></div>
+                            <div style="width:36px;height:36px;background:#fee2e2;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#991b1b;"><i class="fas fa-envelope"></i></div>
+                        </div>
+                        <div style="font-size:0.72rem;color:var(--danger);margin-top:0.5rem;">승인 대기 중</div>
                     </div>
                 </div>
-                <div v-if="msg.sources" class="sources">
-                    <strong>참고:</strong>
-                    <span v-for="s in msg.sources"> {{ s.name }}({{(s.similarity*100).toFixed(1)}}%) </span>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                    <div style="background:var(--surface);border-radius:var(--radius-md);padding:1rem;box-shadow:var(--shadow-sm);">
+                        <div style="font-weight:600;font-size:0.85rem;margin-bottom:0.75rem;"><i class="fas fa-bolt" style="color:var(--primary);margin-right:6px;"></i>최근 활동</div>
+                        <div style="display:flex;flex-direction:column;gap:0.5rem;font-size:0.78rem;">
+                            <div style="display:flex;align-items:center;gap:0.5rem;"><span style="width:6px;height:6px;background:var(--success);border-radius:50%;flex-shrink:0;"></span>김민준님 합격 코덱 발송 완료<span style="margin-left:auto;color:var(--text-muted);">10분 전</span></div>
+                            <div style="display:flex;align-items:center;gap:0.5rem;"><span style="width:6px;height:6px;background:var(--primary);border-radius:50%;flex-shrink:0;"></span>이서연님 2차 면접 예약됨<span style="margin-left:auto;color:var(--text-muted);">1시간 전</span></div>
+                            <div style="display:flex;align-items:center;gap:0.5rem;"><span style="width:6px;height:6px;background:var(--warning);border-radius:50%;flex-shrink:0;"></span>AI/ML 담당자 현황 확인 요청<span style="margin-left:auto;color:var(--text-muted);">3시간 전</span></div>
+                            <div style="display:flex;align-items:center;gap:0.5rem;"><span style="width:6px;height:6px;background:var(--danger);border-radius:50%;flex-shrink:0;"></span>신규 지원자 3명 등록됨<span style="margin-left:auto;color:var(--text-muted);">5시간 전</span></div>
+                        </div>
+                    </div>
+                    <div style="background:var(--surface);border-radius:var(--radius-md);padding:1rem;box-shadow:var(--shadow-sm);">
+                        <div style="font-weight:600;font-size:0.85rem;margin-bottom:0.75rem;"><i class="fas fa-tasks" style="color:var(--primary);margin-right:6px;"></i>대기 작업</div>
+                        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+                            <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;padding:0.4rem 0.6rem;background:#fef3c7;border-radius:6px;"><i class="fas fa-envelope" style="color:#d97706;"></i>합격 코덱 3명 발송 대기<span class="badge badge-review" style="margin-left:auto;">2링시간</span></div>
+                            <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;padding:0.4rem 0.6rem;background:#fee2e2;border-radius:6px;"><i class="fas fa-clock" style="color:#991b1b;"></i>AI/ML팀 면접관 정렬 요청<span class="badge badge-fail" style="margin-left:auto;">긴급</span></div>
+                            <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;padding:0.4rem 0.6rem;background:#ede9fe;border-radius:6px;"><i class="fas fa-file-signature" style="color:#5b21b6;"></i>신규 채용공고 승인 대기<span class="badge badge-new" style="margin-left:auto;">일반</span></div>
+                        </div>
+                    </div>
                 </div>
+            </div>
+
+            <!-- 후보자 목록 -->
+            <div class="page-view" v-else-if="currentView === 'candidates'">
+                <p class="page-title">후보자 목록</p>
+                <p class="page-subtitle">전체 지원자 127명 / 서류진행 34명</p>
+                <table class="data-table">
+                    <thead><tr><th>지원번호</th><th>이름</th><th>지원직무</th><th>지원일</th><th>상태</th></tr></thead>
+                    <tbody>
+                        <tr><td>ACCEPT_001</td><td>김민준</td><td>백엔드 개발자</td><td>2026-03-15</td><td><span class="badge badge-pass">합격</span></td></tr>
+                        <tr><td>ACCEPT_002</td><td>이서연</td><td>프론트엔드 개발자</td><td>2026-03-18</td><td><span class="badge badge-review">검토중</span></td></tr>
+                        <tr><td>ACCEPT_003</td><td>박도윤</td><td>데이터 엔지니어</td><td>2026-03-20</td><td><span class="badge badge-new">신규</span></td></tr>
+                        <tr><td>ACCEPT_004</td><td>최수아</td><td>AI/ML 엔지니어</td><td>2026-03-22</td><td><span class="badge badge-review">검토중</span></td></tr>
+                        <tr><td>ACCEPT_005</td><td>정하은</td><td>백엔드 개발자</td><td>2026-03-25</td><td><span class="badge badge-fail">불합격</span></td></tr>
+                        <tr><td>ACCEPT_006</td><td>강지호</td><td>데브옵스 엔지니어</td><td>2026-03-28</td><td><span class="badge badge-new">신규</span></td></tr>
+                        <tr><td>ACCEPT_007</td><td>윤채원</td><td>프론트엔드 개발자</td><td>2026-04-01</td><td><span class="badge badge-pass">합격</span></td></tr>
+                        <tr><td>ACCEPT_008</td><td>임준혁</td><td>보안 엔지니어</td><td>2026-04-03</td><td><span class="badge badge-review">검토중</span></td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 면접 일정 -->
+            <div class="page-view" v-else-if="currentView === 'schedule'">
+                <p class="page-title">면접 일정</p>
+                <p class="page-subtitle">이번 주 면접 일정입니다.</p>
+                <div class="schedule-list">
+                    <div class="schedule-card"><div class="schedule-date"><div class="schedule-date-day">14</div><div class="schedule-date-mon">APR</div></div><div class="schedule-info"><div class="schedule-name">이서연 — 프론트엔드 (2차 기술면접)</div><div class="schedule-meta">오후 2:00 · 화상회의</div></div><span class="badge badge-review">예정</span></div>
+                    <div class="schedule-card"><div class="schedule-date"><div class="schedule-date-day">15</div><div class="schedule-date-mon">APR</div></div><div class="schedule-info"><div class="schedule-name">박도윤 — 데이터 엔지니어 (1차 인성면접)</div><div class="schedule-meta">오전 10:30 · 대면</div></div><span class="badge badge-review">예정</span></div>
+                    <div class="schedule-card"><div class="schedule-date"><div class="schedule-date-day">16</div><div class="schedule-date-mon">APR</div></div><div class="schedule-info"><div class="schedule-name">최수아 — AI/ML 엔지니어 (최종면접)</div><div class="schedule-meta">오후 3:00 · 대면</div></div><span class="badge badge-new">신규</span></div>
+                    <div class="schedule-card"><div class="schedule-date"><div class="schedule-date-day">17</div><div class="schedule-date-mon">APR</div></div><div class="schedule-info"><div class="schedule-name">강지호 — 데브옵스 엔지니어 (1차 기술면접)</div><div class="schedule-meta">오후 4:00 · 화상회의</div></div><span class="badge badge-new">신규</span></div>
+                </div>
+            </div>
+
+            <!-- 채용 통계 -->
+            <div class="page-view" v-else-if="currentView === 'report'">
+                <p class="page-title">채용 통계 보고서</p>
+                <p class="page-subtitle">2026년 상반기 채용 현황</p>
+                <div class="stat-grid" style="margin-bottom:1rem;">
+                    <div class="stat-card"><div class="stat-value">127</div><div class="stat-label">전체 지원자</div></div>
+                    <div class="stat-card"><div class="stat-value">34</div><div class="stat-label">서류 통과</div></div>
+                    <div class="stat-card"><div class="stat-value">12</div><div class="stat-label">합격</div></div>
+                    <div class="stat-card"><div class="stat-value">9.4%</div><div class="stat-label">합격률</div></div>
+                </div>
+                <table class="data-table">
+                    <thead><tr><th>부서</th><th>지원자</th><th>합격</th><th>진행중</th><th>합격률</th></tr></thead>
+                    <tbody>
+                        <tr><td>백엔드 개발팀</td><td>38</td><td>4</td><td>3</td><td>10.5%</td></tr>
+                        <tr><td>프론트엔드 개발팀</td><td>29</td><td>3</td><td>2</td><td>10.3%</td></tr>
+                        <tr><td>AI/ML팀</td><td>22</td><td>2</td><td>4</td><td>9.1%</td></tr>
+                        <tr><td>데이터 엔지니어링</td><td>18</td><td>2</td><td>1</td><td>11.1%</td></tr>
+                        <tr><td>데브옵스/인프라</td><td>20</td><td>1</td><td>2</td><td>5.0%</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 채용공고 -->
+            <div class="page-view" v-else-if="currentView === 'jobs'">
+                <p class="page-title">채용공고 관리</p>
+                <p class="page-subtitle">현재 진행 중인 채용 포지션</p>
+                <div class="job-card"><div class="job-icon"><i class="fas fa-code"></i></div><div style="flex:1"><div class="job-title">백엔드 개발자 (Java/Spring)</div><div class="job-meta">경력 3년 이상 · 마감: 2026-05-31</div></div><span class="badge badge-pass">진행중</span></div>
+                <div class="job-card"><div class="job-icon"><i class="fas fa-laptop-code"></i></div><div style="flex:1"><div class="job-title">프론트엔드 개발자 (React)</div><div class="job-meta">경력 2년 이상 · 마감: 2026-05-15</div></div><span class="badge badge-pass">진행중</span></div>
+                <div class="job-card"><div class="job-icon"><i class="fas fa-brain"></i></div><div style="flex:1"><div class="job-title">AI/ML 엔지니어</div><div class="job-meta">경력 4년 이상 · 마감: 2026-06-30</div></div><span class="badge badge-review">검토중</span></div>
+                <div class="job-card"><div class="job-icon"><i class="fas fa-database"></i></div><div style="flex:1"><div class="job-title">데이터 엔지니어 (ETL/Spark)</div><div class="job-meta">경력 3년 이상 · 마감: 2026-05-31</div></div><span class="badge badge-new">신규</span></div>
+            </div>
+
+        </div><!-- /.bottom-panel -->
+    </div>
+
+    <!-- Toast 컨테이너 -->
+    <div class="toast-container">
+        <div
+            v-for="toast in toasts"
+            :key="toast.id"
+            :class="['toast', { 'toast-leaving': toast.leaving }]"
+        >
+            <div class="toast-icon"><i class="fas fa-map-marker-alt"></i></div>
+            <div class="toast-content">
+                <div class="toast-title">{{ toast.message }}</div>
+                <div class="toast-url">{{ toast.url }}</div>
             </div>
         </div>
     </div>
-    <div class="input-area">
-        <input type="text" ref="userInputField" v-model="userInput" @keyup.enter="sendMessage()" placeholder="질문을 입력하세요..." :disabled="isLoading">
-        <button class="send-btn" @click="sendMessage()" :disabled="isLoading || !userInput.trim()">전송</button>
-    </div>
 </div>
+
 <script>
     const { createApp, ref, reactive, nextTick, onMounted, watch } = Vue;
+
     createApp({
         setup() {
-            const userInput = ref('');
-            const messages = reactive([{ type: 'bot', text: '안녕하세요! 채용 에세이 RAG 시스템입니다.', status: 'idle', systemLogs: [] }]);
-            const isLoading = ref(false);
-            const chatBox = ref(null);
+            const userInput      = ref('');
+            const messages       = reactive([]);
+            const isLoading      = ref(false);
+            const chatBox        = ref(null);
             const userInputField = ref(null);
-            watch(isLoading, (newVal) => { if (!newVal) nextTick(() => userInputField.value?.focus()); });
-            const scrollToBottom = async () => { await nextTick(); if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight; };
+            const toasts         = reactive([]);
+            const currentView    = ref('dashboard'); // 'dashboard' | 'candidates' | 'schedule' | 'report' | 'jobs'
+            let toastIdCounter   = 0;
+
+            // 화면별 메타 정보
+            const viewMeta = {
+                dashboard:  { label: '대시보드' },
+                candidates: { label: '후보자 목록' },
+                schedule:   { label: '면접 일정' },
+                report:     { label: '채용 통계' },
+                jobs:       { label: '채용공고' },
+            };
+
+            // URL → viewKey 매핑
+            const urlToView = {
+                '/candidates': 'candidates',
+                '/interviews': 'schedule',
+                '/statistics': 'report',
+                '/jobs':       'jobs',
+                '/dashboard':  'dashboard',
+            };
+
+            // 사\uc774\ub4dc\ubc14 \uba54\ub274 \ud074\ub9ad \ub610\ub294 navigate \uc774\ubca4\ud2b8\ub85c \ud654\uba74 \uc804\ud658
+            const navigateView = (viewKey) => {
+                currentView.value = viewKey;
+            };
+
+            // 로딩 끝나면 입력창 포커스
+            watch(isLoading, (newVal) => {
+                if (!newVal) nextTick(() => userInputField.value?.focus());
+            });
+
+            // 스크롤을 맨 아래로
+            const scrollToBottom = () => {
+                nextTick(() => {
+                    if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight;
+                });
+            };
+
+            // ================================================================
+            // Toast 유틸리티
+            // ================================================================
+            const showNavigateToast = (message, url) => {
+                const id = ++toastIdCounter;
+                toasts.push({ id, message, url, leaving: false });
+
+                setTimeout(() => {
+                    const toast = toasts.find(t => t.id === id);
+                    if (toast) toast.leaving = true;
+                    setTimeout(() => {
+                        const idx = toasts.findIndex(t => t.id === id);
+                        if (idx !== -1) toasts.splice(idx, 1);
+                    }, 300);
+                }, 2000);
+            };
+
+            // ================================================================
+            // 텍스트 렌더링 (순수 text 필드만 처리)
+            // ================================================================
+            const renderText = (text) => {
+                if (!text) return '';
+                // 혹만약 LLM이 실수로 토큰을 뱉으면 클라이언트에서도 필터링
+                let clean = text
+                    .replace(/\[APPROVAL:[^\]]*\]/g, '')
+                    .replace(/\[COMPLETED:[^\]]*\]/g, '')
+                    .replace(/\[CANCELLED:[^\]]*\]/g, '')
+                    .trim();
+                return clean.replace(/\n/g, '<br>');
+            };
+
+            // ================================================================
+            // 히스토리 로딩 (JSON content 파싱 → 완벽 복원)
+            // ================================================================
             const loadHistory = async () => {
                 try {
-                    const res = await fetch('/api/chat/history?userId=HR_USER_01');
-                    const history = await res.json();
-                    if (history?.length > 0) {
+                    const res  = await fetch('/api/chat/history?userId=HR_USER_01');
+                    const list = await res.json();
+
+                    if (list?.length > 0) {
                         messages.length = 0;
-                        history.filter(m => m.role !== 'SUMMARY').forEach(m => {
-                            const type = (m.role.toLowerCase() === 'ai' || m.role.toLowerCase() === 'assistant') ? 'bot' : 'user';
-                            const msgObj = { type, text: m.content || '', status: 'idle', systemLogs: [] };
-                            if (type === 'bot') {
-                                const lines = (m.content || '').split('\n');
-                                msgObj.systemLogs = lines.filter(l => l.includes('화면으로 이동합니다') || l.includes('[COMPLETED:'));
-                                const appMatch = (m.content || '').match(/\[APPROVAL:[^\]]*\]/);
-                                if (appMatch) msgObj.approvalToken = appMatch[0];
+                        list.filter(m => m.role !== 'SUMMARY').forEach(m => {
+                            const type = (m.role === 'ASSISTANT' || m.role === 'AI') ? 'bot' : 'user';
+                            const msgObj = { type, text: '', status: 'idle', systemLogs: [] };
+
+                            // JSON 파싱 시도
+                            let parsed = null;
+                            try {
+                                if (m.content && m.content.trim().startsWith('{')) {
+                                    parsed = JSON.parse(m.content);
+                                }
+                            } catch (e) { /* 무시 */ }
+
+                            if (parsed) {
+                                msgObj.text = parsed.text || '';
+
+                                // 이벤트 배열에서 approval/completed/system 복원
+                                if (parsed.events && Array.isArray(parsed.events)) {
+                                    parsed.events.forEach(ev => {
+                                        if (ev.approval && !msgObj.approvalToken) {
+                                            msgObj.approvalToken = ev.approval;
+                                        }
+                                        if (ev.completed) {
+                                            msgObj.isCompleted = true;
+                                        }
+                                        if (ev.system) {
+                                            msgObj.systemLogs.push(ev.system);
+                                        }
+                                        if (ev.navigate) {
+                                            // 히스토리 복원 시 navigate는 시스템 로그로만 표시
+                                            msgObj.systemLogs.push(ev.navigate.message || ev.navigate);
+                                        }
+                                    });
+                                }
+                            } else {
+                                // 구형 plain text 포맷 fallback
+                                msgObj.text = m.content || '';
                             }
+
                             messages.push(msgObj);
                         });
+                    } else {
+                        // 빈 히스토리면 웰컴 메시지
+                        messages.push({
+                            type: 'bot',
+                            text: '안녕하세요. HR AI 에이전트입니다.\n지원자 조회, 메일 발송, 화면 이동 등을 도와드립니다.',
+                            status: 'idle',
+                            systemLogs: []
+                        });
                     }
-                } catch (e) { console.error(e); } finally { scrollToBottom(); }
+                } catch (e) {
+                    console.error('[loadHistory] 오류:', e);
+                    messages.push({
+                        type: 'bot',
+                        text: '히스토리를 불러오는 중 오류가 발생했습니다.',
+                        status: 'idle',
+                        systemLogs: []
+                    });
+                } finally {
+                    scrollToBottom();
+                }
             };
-            const clearHistory = async () => {
-                if (!confirm('초기화할까요?')) return;
-                await fetch('/api/chat/history?userId=HR_USER_01', { method: 'DELETE' });
-                messages.length = 0;
-                messages.push({ type: 'bot', text: '초기화되었습니다.', status: 'idle', systemLogs: [] });
+
+            // ================================================================
+            // 초기화
+            // ================================================================
+            const clearHistory = () => {
+                const isConfirmed = confirm('대화 내용을 전체 초기화하시겠습니까?');
+                if (!isConfirmed) return;
+                
+                // 완벽한 Vue Reactivity를 위한 splice 처리
+                messages.splice(0, messages.length);
+                messages.push({
+                    type: 'bot',
+                    text: '초기화가 완료되었습니다. 새로운 HR 작업을 지시해주세요.',
+                    status: 'idle',
+                    systemLogs: ['시스템 세션 리셋 완료']
+                });
+                
+                // 대시보드로 이동
+                currentView.value = 'dashboard';
+                setTimeout(scrollToBottom, 100);
+
+                // 백엔드 데이터 삭제
+                fetch('/api/chat/history?userId=HR_USER_01', { method: 'DELETE' })
+                    .catch(err => console.error('백엔드 삭제 에러:', err));
             };
-            const renderMessage = (text) => {
-                if (!text) return '';
-                return text.split('\n').filter(l => !l.includes('[APPROVAL:') && !l.includes('[COMPLETED:') && !l.includes('화면으로 이동합니다')).join('\n').trim().replace(/\n/g, '<br>');
-            };
+
+            // ================================================================
+            // 승인 관련 유틸리티
+            // ================================================================
             const getTaskId = (token) => {
-                if (!token) return 'Unknown';
-                const match = /:BULK:([^\]\s]+)\]/i.exec(token) || /:EMAIL:([^\]\s]+):/i.exec(token);
-                return match ? match[1] : 'Unknown';
+                if (!token) return 'N/A';
+                // [APPROVAL:BULK:TASK_ID] 또는 [APPROVAL:EMAIL:candidateId:resultType]
+                const bulkMatch  = /:BULK:([^\]]+)\]/i.exec(token);
+                const emailMatch = /:EMAIL:([^:\]]+)/i.exec(token);
+                return bulkMatch?.[1] || emailMatch?.[1] || 'N/A';
             };
-            const isActionCompleted = (msg) => msg.isCompleted || (msg.text && msg.text.includes('[COMPLETED:'));
-            const isActionCancelled = (msg) => (msg.text && msg.text.includes('[CANCELLED:'));
+
+            const isCompleted = (msg) => msg.isCompleted;
+            const isCancelled = (msg) => msg.isCancelled;
+
             const approveAction = async (msg) => {
                 if (isLoading.value) return;
                 const taskId = getTaskId(msg.approvalToken);
                 msg.processingTaskId = taskId;
-                userInput.value = `[시스템 지침]: Task ID ${taskId} 에 대해 메일 발송을 승인합니다. [COMPLETED:BULK:${taskId}] sendBulkResultEmail 툴을 confirmed=true로 호출하여 발송을 완료하세요.`;
+                userInput.value = `[시스템 승인] Task ID ${taskId} 에 대해 메일 발송을 승인합니다.`;
                 await sendMessage(true);
             };
+
             const cancelAction = async (msg) => {
                 if (isLoading.value) return;
                 const taskId = getTaskId(msg.approvalToken);
-                msg.isRejected = true;
-                userInput.value = `[시스템 지침]: Task ID ${taskId} 에 대한 발송이 취소되었습니다. [CANCELLED:ALL:${taskId}]`;
+                msg.isCancelled = true;
+                userInput.value = `[시스템 취소] Task ID ${taskId} 에 대한 발송이 취소되었습니다.`;
                 await sendMessage(true);
             };
-            const sendMessage = async (isSystem = false) => {
+
+            // ================================================================
+            // 메시지 전송 & SSE 스트림 처리
+            // ================================================================
+            const sendMessage = async (isSystemMsg = false) => {
                 const text = userInput.value.trim();
                 if (!text || isLoading.value) return;
-                messages.push({ type: 'user', text, status: 'idle', systemLogs: [] });
-                userInput.value = ''; isLoading.value = true;
-                const botMsg = reactive({ type: 'bot', text: '', status: 'thinking', systemLogs: [] });
-                messages.push(botMsg); scrollToBottom();
-                let buffer = ''; let cursor = 0;
-                let typingTimer = setInterval(() => {
-                    if (cursor < buffer.length) {
-                        botMsg.status = 'typing'; botMsg.text += buffer[cursor++]; scrollToBottom();
+
+                if (!isSystemMsg) {
+                    messages.push({ type: 'user', text, status: 'idle', systemLogs: [] });
+                }
+
+                userInput.value = '';
+                isLoading.value = true;
+
+                const botMsg = reactive({
+                    type: 'bot',
+                    text: '',
+                    status: 'thinking',
+                    systemLogs: [],
+                    approvalToken: null,
+                    isCompleted: false,
+                    isCancelled: false
+                });
+                messages.push(botMsg);
+                scrollToBottom();
+
+                // 타이핑 이펙트용 버퍼
+                let textBuffer = '';
+                let renderCursor = 0;
+                const typingTimer = setInterval(() => {
+                    if (renderCursor < textBuffer.length) {
+                        botMsg.status = 'typing';
+                        botMsg.text += textBuffer[renderCursor++];
+                        scrollToBottom();
                     } else if (!isLoading.value) {
-                        clearInterval(typingTimer); botMsg.status = 'idle';
+                        clearInterval(typingTimer);
+                        botMsg.status = 'idle';
+                        // processingTaskId 클리어
                         messages.forEach(m => { if (m.processingTaskId) delete m.processingTaskId; });
                     }
-                }, 20);
+                }, 18);
+
                 try {
-                    const sse = new SSE('/api/chat', { headers: { 'Content-Type': 'application/json' }, payload: JSON.stringify({ message: text }), method: 'POST' });
+                    const sse = new SSE('/api/chat', {
+                        headers: { 'Content-Type': 'application/json' },
+                        payload: JSON.stringify({ message: text }),
+                        method: 'POST'
+                    });
+
                     sse.addEventListener('message', (e) => {
                         const res = JSON.parse(e.data);
-                        if (res.text) buffer += res.text;
-                        if (res.system) { if (!botMsg.systemLogs) botMsg.systemLogs = []; botMsg.systemLogs.push(res.system); }
-                        if (res.approval) botMsg.approvalToken = res.approval;
-                        if (res.completed) { if (!botMsg.systemLogs) botMsg.systemLogs = []; botMsg.systemLogs.push(res.completed); botMsg.isCompleted = true; }
+
+                        // text 채널 → 타이핑 버퍼에 추가
+                        if (res.text) {
+                            textBuffer += res.text;
+                        }
+
+                        // system 채널 → 시스템 로그 영역에 추가
+                        if (res.system) {
+                            botMsg.systemLogs.push(res.system);
+                            scrollToBottom();
+                        }
+
+                        // navigate 채널 → Toast 알림 + 자동 화면 전환
+                        if (res.navigate) {
+                            const nav = res.navigate;
+                            botMsg.systemLogs.push(nav.message || nav);
+                            showNavigateToast(
+                                nav.message || nav,
+                                nav.url || ''
+                            );
+                            // URL 기반 자동 뷰 전환 (0.8초 딜레이로 Toast 본 후 이동)
+                            const targetView = urlToView[nav.url];
+                            if (targetView) {
+                                setTimeout(() => { currentView.value = targetView; }, 800);
+                            }
+                            scrollToBottom();
+                        }
+
+
+                        // approval 채널 → 승인 카드
+                        if (res.approval) {
+                            botMsg.approvalToken = res.approval;
+                            scrollToBottom();
+                        }
+
+                        // completed 채널 → 완료 상태 업데이트
+                        if (res.completed) {
+                            // 이전 메시지 중 같은 taskId의 approval을 가진 것 찾아 완료 처리
+                            const taskId = extractTaskId(res.completed);
+                            const prevMsg = [...messages].reverse().find(m =>
+                                m.approvalToken && getTaskId(m.approvalToken) === taskId
+                            );
+                            if (prevMsg) {
+                                prevMsg.isCompleted = true;
+                                delete prevMsg.processingTaskId;
+                            }
+                            botMsg.systemLogs.push('✅ ' + res.completed.replace(/\[COMPLETED:[^\]]*\]/, '').trim());
+                            scrollToBottom();
+                        }
                     });
-                    sse.addEventListener('readystatechange', (e) => { if (e.readyState === 2) isLoading.value = false; });
+
+                    sse.addEventListener('readystatechange', (e) => {
+                        if (e.readyState === 2) {
+                            isLoading.value = false;
+                        }
+                    });
+
+                    sse.addEventListener('error', (e) => {
+                        console.error('[SSE] 오류:', e);
+                        botMsg.text = '연결 오류가 발생했습니다. 다시 시도해 주세요.';
+                        botMsg.status = 'idle';
+                        isLoading.value = false;
+                        clearInterval(typingTimer);
+                    });
+
                     sse.stream();
-                } catch (e) { botMsg.text = '에러 발생: ' + e.message; isLoading.value = false; clearInterval(typingTimer); }
+
+                } catch (err) {
+                    console.error('[sendMessage] 오류:', err);
+                    botMsg.text = '오류: ' + err.message;
+                    botMsg.status = 'idle';
+                    isLoading.value = false;
+                    clearInterval(typingTimer);
+                }
             };
-            onMounted(() => { loadHistory(); nextTick(() => userInputField.value?.focus()); });
-            return { userInput, messages, isLoading, chatBox, userInputField, sendMessage, clearHistory, renderMessage, getTaskId, isActionCompleted, isActionCancelled, approveAction, cancelAction };
+
+            /** completed 토큰에서 taskId 추출 */
+            const extractTaskId = (token) => {
+                if (!token) return '';
+                const m = /\[COMPLETED:[^:]+:([^\]]+)\]/.exec(token);
+                return m?.[1] || '';
+            };
+
+            onMounted(() => {
+                loadHistory();
+                nextTick(() => userInputField.value?.focus());
+            });
+
+            return {
+                userInput, messages, isLoading, chatBox, userInputField, toasts,
+                currentView, viewMeta, navigateView,
+                sendMessage, clearHistory, renderText,
+                getTaskId, isCompleted, isCancelled,
+                approveAction, cancelAction
+            };
         }
     }).mount('#app');
 </script>

@@ -105,7 +105,7 @@
                             </template>
                         </div>
                         <div v-else-if="msg.isRejected || isActionCancelled(msg.text)" class="text-center py-1 text-gray-400 text-xs">취소된 작업입니다.</div>
-                        <div v-else class="text-center py-1 text-green-600 text-xs font-bold">발송 완료 ✅</div>
+                        <div v-else class="text-center py-1 text-green-600 text-xs font-bold">처리 완료 ✅</div>
                     </div>
                 </div>
                 <div v-if="msg.sources" class="sources">
@@ -190,7 +190,8 @@
                 if (isLoading.value) return;
                 const taskId = getTaskId(msg.text);
                 msg.processingTaskId = taskId;
-                const confirmMsg = `[시스템 지침]: Task ID ${taskId} 에 대해 메일 발송을 승인합니다. sendBulkResultEmail 툴을 confirmed=true로 호출하여 발송을 완료하세요.`;
+                // [ACTION_COMPLETED] 토큰을 포함하여 기록에 남김으로써 재로딩 시에도 처리 완료 상태를 유지함
+                const confirmMsg = `[시스템 지침]: Task ID ${taskId} 에 대해 메일 발송을 승인합니다. [ACTION_COMPLETED:ALL:${taskId}] sendBulkResultEmail 툴을 confirmed=true로 호출하여 발송을 완료하세요.`;
                 userInput.value = confirmMsg;
                 await sendMessage(true);
             };
@@ -219,7 +220,12 @@
                 let typingTimer = setInterval(() => {
                     if (cursor < buffer.length) {
                         botMsg.status = 'typing'; botMsg.text += buffer[cursor++]; scrollToBottom();
-                    } else if (!isLoading.value) { clearInterval(typingTimer); botMsg.status = 'idle'; }
+                    } else if (!isLoading.value) {
+                        clearInterval(typingTimer);
+                        botMsg.status = 'idle';
+                        // 응답이 끝나면 모든 메시지의 '처리 중' 상태를 해제 (안전장치)
+                        messages.forEach(m => { if (m.processingTaskId) delete m.processingTaskId; });
+                    }
                 }, 20);
 
                 try {

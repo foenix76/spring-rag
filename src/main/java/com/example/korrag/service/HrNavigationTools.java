@@ -11,28 +11,51 @@ import org.slf4j.LoggerFactory;
  *
  * [리턴 규격]
  * NavigationResult 레코드를 반환합니다.
- * RagService에서 이 결과를 system 채널(로그) + navigate 채널(Toast)로 분리 발송합니다.
+ * RagService에서 텍스트를 파싱하는 것을 방지하기 위해,
+ * ToolEventPublisher를 통해 SSE Sink로 별도의 시스템 이벤트를 직접 쏩니다.
  */
 @Component
 public class HrNavigationTools {
     private static final Logger log = LoggerFactory.getLogger(HrNavigationTools.class);
+    
+    private final ToolEventPublisher toolEventPublisher;
+    
+    public HrNavigationTools(ToolEventPublisher toolEventPublisher) {
+        this.toolEventPublisher = toolEventPublisher;
+    }
 
-    public record NavigationResult(String target, String url, String message) {}
+    public record NavigationResult(String target, String url) {}
 
     @Tool(description = """
             HR 시스템 내 특정 화면으로 이동합니다.
             가능한 이동 대상: candidate_list(후보자 목록), schedule(면접 일정), report(통계 보고서), job_postings(채용공고)
             """)
-    public NavigationResult navigateTo(
+    public String navigateTo(
+            @ToolParam(description = "필수: 현재 대화중인 사용자의 ID ('HR_USER_01')") String userId,
             @ToolParam(description = "이동할 화면: candidate_list | schedule | report | job_postings") String target) {
         log.info("[AI ACTION] navigateTo 호출: target={}", target);
 
-        return switch (target) {
-            case "candidate_list" -> new NavigationResult(target, "/candidates",  "[NAVIGATE:/candidates] 후보자 목록 화면으로 이동합니다.");
-            case "schedule"       -> new NavigationResult(target, "/interviews",  "[NAVIGATE:/interviews] 면접 일정 화면으로 이동합니다.");
-            case "report"         -> new NavigationResult(target, "/statistics",  "[NAVIGATE:/statistics] 채용 통계 보고서 화면으로 이동합니다.");
-            case "job_postings"   -> new NavigationResult(target, "/jobs",        "[NAVIGATE:/jobs] 채용공고 관리 화면으로 이동합니다.");
-            default               -> new NavigationResult(target, "/dashboard",   "[NAVIGATE:/dashboard] 대시보드로 이동합니다. (알 수 없는 대상: " + target + ")");
+        String menuName = switch (target) {
+            case "candidate_list" -> "후보자 목록";
+            case "schedule"       -> "면접 일정";
+            case "report"         -> "채용 통계 보고서";
+            case "job_postings"   -> "채용공고 관리";
+            default               -> "대시보드";
         };
+        
+        String url = switch (target) {
+            case "candidate_list" -> "/candidates";
+            case "schedule"       -> "/interviews";
+            case "report"         -> "/statistics";
+            case "job_postings"   -> "/jobs";
+            default               -> "/dashboard";
+        };
+
+        // UI에 NAVIGATE 토큰을 시스템 이벤트로 직접 발송
+        String token = String.format("[NAVIGATE:%s]", url);
+        toolEventPublisher.publishEvent(userId, java.util.Map.of("navigate", token));
+
+        // LLM에게는 화면 이동 처리가 되었다고 텍스트만 전달 (괄호 토큰 포함 금지)
+        return String.format("사용자에게 %s 화면으로 이동하는 명령을 브라우저 시스템 채널로 성공적으로 전송했습니다.", menuName);
     }
 }

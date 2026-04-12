@@ -62,13 +62,16 @@ public class RagService {
     private static final String TOKEN_CANCELLED = "[CANCELLED:";
     private static final String TOKEN_NAVIGATE  = "[NAVIGATE:";
 
+    private final ToolEventPublisher toolEventPublisher;
+
     public RagService(ChatClient.Builder chatClientBuilder,
                       OnnxEmbeddingService embeddingService,
                       VectorStoreRepository vectorRepository,
                       OnnxRerankService rerankService,
                       ChatMessageRepository chatMessageRepository,
                       HrActionTools actionTools,
-                      HrNavigationTools navigationTools) {
+                      HrNavigationTools navigationTools,
+                      ToolEventPublisher toolEventPublisher) {
         this.chatClient = chatClientBuilder
                 .defaultTools(actionTools, navigationTools)
                 .build();
@@ -76,6 +79,7 @@ public class RagService {
         this.vectorRepository    = vectorRepository;
         this.rerankService       = rerankService;
         this.chatMessageRepository = chatMessageRepository;
+        this.toolEventPublisher = toolEventPublisher;
     }
 
     // ========================================================================
@@ -177,13 +181,15 @@ public class RagService {
 
         // --- 5) Flux.create 기반 멀티채널 스트리밍 ---
         final StringBuilder fullTextAccumulator   = new StringBuilder(); // 최종 text 누적
-        final AtomicBoolean hasApprovalBeenSent   = new AtomicBoolean(false);
-        final AtomicBoolean hasCompletedBeenSent  = new AtomicBoolean(false);
-        final AtomicBoolean hasNavigateBeenSent   = new AtomicBoolean(false);
         final AtomicBoolean savedToDb             = new AtomicBoolean(false); // 중복 저장 방지
         final List<Map<String, Object>> savedEvents = Collections.synchronizedList(new ArrayList<>());
 
         return Flux.<Map<String, Object>>create(sink -> {
+            // [중요: 완벽한 필드 원천 분리형 아키텍처]
+            // ToolEventPublisher에 현재 사용자의 채널 Sink를 등록.
+            // HrActionTools/HrNavigationTools 내부에서 직접 이 sink를 통해 시스템 이벤트를 Push함!
+            toolEventPublisher.registerSink(userId, sink);
+            
             try {
                 chatClient.prompt()
                         .system(buildMainSystemPrompt())
@@ -204,81 +210,30 @@ public class RagService {
                                 }
                             }
 
-                            // === 심플 텍스트 라우팅 & Non-blocking 토큰 파싱 ===
+                            // === 심플 텍스트 라우팅 만 담당 ===
+                            // 파싱(indexOf) 로직 완전 제거. Tool에서 생성된 이벤트는 
+                            // toolEventPublisher를 통해 별도 채널로 알아서 들어옵니다.
                             if (!chunk.isEmpty()) {
                                 fullTextAccumulator.append(chunk);
                                 
-                                // 지연이나 필터링 없이 텍스트 즉시 발송
                                 Map<String, Object> textEvent = Map.of("text", chunk);
                                 savedEvents.add(textEvent);
                                 sink.next(textEvent);
                             }
-                            
-                            String accumulated = fullTextAccumulator.toString();
 
-                            // [APPROVAL:...] 토큰 발송 (최초 1회)
-                            if (!hasApprovalBeenSent.get() && accumulated.contains(TOKEN_APPROVAL)) {
-                                int tS = accumulated.indexOf(TOKEN_APPROVAL);
-                                int tE = accumulated.indexOf("]", tS);
-                                if (tE > tS) {
-                                    String token = accumulated.substring(tS, tE + 1);
-                                    Map<String, Object> approvalEvent = Map.of("approval", token);
-                                    savedEvents.add(approvalEvent);
-                                    sink.next(approvalEvent);
-                                    hasApprovalBeenSent.set(true);
-                                    log.info("[CHANNEL:approval] 토큰 발송: {}", token);
-                                }
-                            }
-
-                            // [COMPLETED:...] 토큰 발송 (최초 1회)
-                            if (!hasCompletedBeenSent.get() && accumulated.contains(TOKEN_COMPLETED)) {
-                                int tS = accumulated.indexOf(TOKEN_COMPLETED);
-                                int tE = accumulated.indexOf("]", tS);
-                                if (tE > tS) {
-                                    String token = accumulated.substring(tS, tE + 1);
-                                    Map<String, Object> completedEvent = Map.of("completed", token);
-                                    savedEvents.add(completedEvent);
-                                    sink.next(completedEvent);
-                                    hasCompletedBeenSent.set(true);
-                                    log.info("[CHANNEL:completed] 토큰 발송: {}", token);
-                                }
-                            }
-
-                            // [NAVIGATE:...] 토큰 발송 (최초 1회)
-                            if (!hasNavigateBeenSent.get() && accumulated.contains(TOKEN_NAVIGATE)) {
-                                int tS = accumulated.indexOf(TOKEN_NAVIGATE);
-                                int tE = accumulated.indexOf("]", tS);
-                                if (tE > tS) {
-                                    String token = accumulated.substring(tS, tE + 1);
-                                    String url = token.replace("[NAVIGATE:", "").replace("]", "").trim();
-                                    
-                                    Map<String, Object> navMap = new HashMap<>();
-                                    navMap.put("url", url);
-                                    
-                                    Map<String, Object> navigateEvent = Map.of("navigate", navMap);
-                                    savedEvents.add(navigateEvent);
-                                    sink.next(navigateEvent);
-                                    hasNavigateBeenSent.set(true);
-                                    log.info("[CHANNEL:navigate] 화면 이동 이벤트 발송: {}", url);
-                                }
-                            }
-
-                            // 스트림 종료 시 DB 저장 (중복 방지)
-                            if (finishReason != null && !finishReason.isEmpty() && !"NONE".equalsIgnoreCase(finishReason)) {
+                            // LLM 스트림 종료 조건 검사
+                            if (finishReason != null && !finishReason.isEmpty() && !finishReason.equalsIgnoreCase("UNKNOWN")) {
                                 if (savedToDb.compareAndSet(false, true)) {
-                                    saveAssistantMessage(userId, savedEvents, fullTextAccumulator.toString());
-                                    log.info("[STREAM] 종료 (finishReason={}), 저장 완료", finishReason);
+                                    if (fullTextAccumulator.length() > 0 || !savedEvents.isEmpty()) {
+                                        saveAssistantMessage(userId, savedEvents, fullTextAccumulator.toString());
+                                    }
                                 }
+                                sink.complete();
                             }
                         })
-                        .doOnComplete(() -> {
-                            // finishReason이 안 잡힌 경우 대비 최종 저장 (중복 방지)
-                            if (savedToDb.compareAndSet(false, true)) {
-                                if (fullTextAccumulator.length() > 0 || !savedEvents.isEmpty()) {
-                                    saveAssistantMessage(userId, savedEvents, fullTextAccumulator.toString());
-                                }
-                            }
-                            sink.complete();
+                        .doFinally(signal -> {
+                            // 리소스 정리 (채널 해제)
+                            toolEventPublisher.removeSink(userId);
                         })
                         .doOnError(e -> {
                             log.error("[STREAM] 오류 발생: {}", e.getMessage(), e);
@@ -286,6 +241,7 @@ public class RagService {
                         })
                         .subscribe();
             } catch (Exception e) {
+                toolEventPublisher.removeSink(userId);
                 log.error("[RagService] askStream 초기화 오류: {}", e.getMessage(), e);
                 sink.error(e);
             }
@@ -431,13 +387,10 @@ public class RagService {
                 1. 반드시 모든 응답은 한국어로만 답변합니다. (중국어, 영어 절대 불가)
                 2. [참고 지원자 정보]에 없는 지원자 이름, ID, 지원번호를 절대 만들지 마세요.
                    - 정보가 없으면 "해당 정보를 찾을 수 없습니다"라고 솔직하게 말하세요.
-                3. ★★★ 구조적 토큰(대괄호 기호로 감싸진 APPROVAL, COMPLETED, NAVIGATE 등) 취급 규칙 ★★★
-                   - 도구(Tool) 호출 결과 텍스트 안에 위와 같은 대괄호 토큰이 포함되어 있다면, 당신의 응답 메시지 마지막 구석에 **단 한 글자도 바꾸지 말고 100% 원본 그대로 반드시 출력**하세요!!
-                   - 번역, 생략, 요약, 임의 생성 절대 금지. (이 토큰이 누락되거나 변형되면 UI 컴포넌트가 파괴됩니다)
-                   - 중요: 질문에 대답할 때 이 지시문 자체를 시스템 설명용으로 말해주지 마세요. 툴 응답을 받았을 때만 토큰을 출력하세요. 스스로 괄호 토큰을 지어내서도 안 됩니다.
+                3. 사용자가 승인을 하거나 취소를 하는 경우, 텍스트 형태의 기호나 토큰을 만들어 기입하지 마세요. 도구가 알아서 전송합니다. 
+                   - 당신은 "승인 카드를 띄워드렸습니다.", "발송되었습니다." 와 같이 과정만 부드럽게 대답해 주면 됩니다.
                 4. 여러 명에게 메일을 보낼 때는 반드시 sendBulkResultEmail 도구를 사용하세요.
                 5. 특정 조건의 지원자 목록을 나열할 때는 **반드시 해당 지원자가 추출된 근거(요약)**를 그 옆에 한 줄로 작성해 주세요.
-                6. 툴이 반환한 내용 중 토큰을 제외한 나머지 텍스트는 당신이 부드러운 한국어로 의역해도 좋습니다. 단, 대괄호 토큰만은 절대 건드리지 마세요.
                 """;
     }
 

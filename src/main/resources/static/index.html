@@ -1513,14 +1513,9 @@
                 // ================================================================
                 const renderText = (text) => {
                     if (!text) return '';
-                    // 혹만약 LLM이 실수로 토큰을 뱉으면 클라이언트에서도 필터링
-                    let clean = text
-                        .replace(/\[APPROVAL:[^\]]*\]/g, '')
-                        .replace(/\[COMPLETED:[^\]]*\]/g, '')
-                        .replace(/\[CANCELLED:[^\]]*\]/g, '')
-                        .replace(/\[NAVIGATE:[^\]]*\]/g, '')
-                        .trim();
-                    return clean.replace(/\n/g, '<br>');
+                    // 백엔드의 완벽한 채널 분리로 인해 프론트엔드에서는 
+                    // 더 이상 정규식 파싱(replace)을 수행하지 않습니다.
+                    return text.replace(/\n/g, '<br>');
                 };
 
                 // ================================================================

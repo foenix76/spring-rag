@@ -1,226 +1,222 @@
 package com.example.korrag.service;
 
+import com.example.korrag.entity.ApplicantEssay;
 import com.example.korrag.entity.ChatMessage;
-import com.example.korrag.repository.ChatMessageRepository;
 import com.example.korrag.repository.VectorStoreRepository;
-import lombok.extern.slf4j.Slf4j;
+import com.example.korrag.repository.ApplicantEssayRepository;
+import com.example.korrag.repository.ChatMessageRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
+import org.springframework.ai.chat.model.ChatModel;
 import reactor.core.publisher.Flux;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
-@Slf4j
-public class RagService {
+public class RagService implements ApplicationRunner {
 
-    private final ChatClient chatClient;
+    private static final Logger log = LoggerFactory.getLogger(RagService.class);
+
+    private final ApplicantEssayRepository applicantRepository;
     private final OnnxEmbeddingService embeddingService;
     private final VectorStoreRepository vectorRepository;
-    private final OnnxRerankService rerankService;
     private final ChatMessageRepository chatMessageRepository;
-    private final HrActionTools actionTools;
-    private final HrNavigationTools navigationTools;
+    private final OnnxRerankService rerankService;
+    private final ChatClient chatClient;
 
-    @Value("${app.rag.retrieval-top-k:10}")
-    private int retrievalTopK;
+    @Value("${app.rag.retrieval-top-k}") private int retrievalTopK;
+    @Value("${app.rag.rerank-top-k}") private int rerankTopK;
+    @Value("${app.rag.similarity-threshold}") private double threshold;
 
-    @Value("${app.rag.rerank-top-k:3}")
-    private int rerankTopK;
-
-    @Value("${app.rag.similarity-threshold:0.7}")
-    private float threshold;
-
-    public RagService(ChatClient.Builder chatClientBuilder,
+    public RagService(ApplicantEssayRepository applicantRepository,
                       OnnxEmbeddingService embeddingService,
-                      VectorStoreRepository vectorRepository,
                       OnnxRerankService rerankService,
+                      VectorStoreRepository vectorRepository,
                       ChatMessageRepository chatMessageRepository,
-                      HrActionTools actionTools,
-                      HrNavigationTools navigationTools) {
-        // 도구(Tool)들을 ChatClient에 기본으로 등록하여 모든 프롬프트에서 사용 가능하게 함
-        this.chatClient = chatClientBuilder
-                .defaultTools(actionTools, navigationTools)
-                .build();
+                      ChatClient.Builder chatClientBuilder,
+                      HrNavigationTools navTools,
+                      HrActionTools actionTools) {
+        this.applicantRepository = applicantRepository;
         this.embeddingService = embeddingService;
-        this.vectorRepository = vectorRepository;
         this.rerankService = rerankService;
+        this.vectorRepository = vectorRepository;
         this.chatMessageRepository = chatMessageRepository;
-        this.actionTools = actionTools;
-        this.navigationTools = navigationTools;
+        
+        // ChatClient 설정: 기본 시스템 프롬프트 및 툴 바인딩
+        this.chatClient = chatClientBuilder
+                .defaultSystem("당신은 채용 담당자를 돕는 전문 비서입니다. 제공된 지원자 에세이 정보와 대화 이력을 바탕으로 정확하고 친절하게 답변하세요. " +
+                        "필요한 경우 인사 시스템의 도구(화면 이동, 메일 발송 등)를 사용하여 업무를 수행하세요.")
+                .defaultTools(navTools, actionTools)
+                .build();
+        
+        log.info("RagService 초기화 완료: Spring AI ChatClient 및 MCP 툴 바인딩 완료");
     }
 
-    @org.springframework.transaction.annotation.Transactional
-    public void processEpochSummarization(String userId) {
-        java.util.Optional<ChatMessage> latestSummary = chatMessageRepository.findFirstByUserIdAndRoleOrderByIdDesc(userId, "SUMMARY");
-        
-        long countSinceLastSummary;
-        if (latestSummary.isPresent()) {
-            countSinceLastSummary = chatMessageRepository.countByUserIdAndIdGreaterThan(userId, latestSummary.get().getId());
-        } else {
-            countSinceLastSummary = chatMessageRepository.countByUserId(userId);
-        }
-
-        if (countSinceLastSummary >= 10) {
-            log.info("유저 {}의 계단식 요약 조건 충족 (원문 개수: {})", userId, countSinceLastSummary);
-            
-            List<ChatMessage> toSummarize;
-            String baseSummary = "";
-
-            if (latestSummary.isPresent()) {
-                baseSummary = latestSummary.get().getContent();
-                toSummarize = chatMessageRepository.findRecentMessagesAsc(userId, (int)countSinceLastSummary)
-                        .stream()
-                        .filter(m -> m.getId() > latestSummary.get().getId())
-                        .limit(5)
-                        .toList();
-            } else {
-                toSummarize = chatMessageRepository.findRecentMessagesAsc(userId, 10)
-                        .stream()
-                        .limit(5)
-                        .toList();
-            }
-
-            String contentToCompress = (baseSummary.isEmpty() ? "" : "[기존 요약]: " + baseSummary + "\n") +
-                    toSummarize.stream()
-                            .map(m -> String.format("%s: %s", m.getRole(), m.getContent()))
-                            .collect(Collectors.joining("\n"));
-
-            String newSummaryContent = chatClient.prompt()
-                    .system("당신은 채용 비서의 기억 관리자입니다. 제공된 [기존 요약]과 [추가 대화]를 통합하여 비서가 참고할 '장기 기억 요약본'을 만드세요.\n" +
-                            "- 지원자의 이름, 상태, 핵심 질문 사항 등 중요한 정보는 반드시 유지하세요.\n" +
-                            "- 매우 간결하고 구조적으로 작성하세요.")
-                    .user("통합 요약할 내용:\n" + contentToCompress)
-                    .call()
-                    .content();
-
-            chatMessageRepository.deleteByUserIdAndRole(userId, "SUMMARY");
-            chatMessageRepository.save(ChatMessage.builder()
-                    .userId(userId)
-                    .role("SUMMARY")
-                    .content(newSummaryContent)
-                    .build());
-            
-            log.info("유저 {}의 요약본 갱신 완료", userId);
-        }
-    }
-
-    private String getHistoryContextForAi(String userId) {
-        java.util.Optional<ChatMessage> summary = chatMessageRepository.findFirstByUserIdAndRoleOrderByIdDesc(userId, "SUMMARY");
-        List<ChatMessage> recentMessages;
-        
-        if (summary.isPresent()) {
-            recentMessages = chatMessageRepository.findRecentMessagesAsc(userId, 20)
-                    .stream()
-                    .filter(m -> m.getId() > summary.get().getId())
-                    .toList();
-            
-            return String.format("[과거 주요 맥락 요약]\n%s\n\n[최근 대화]\n%s", 
-                    summary.get().getContent(),
-                    recentMessages.stream()
-                            .map(m -> String.format("%s: %s", m.getRole(), m.getContent()))
-                            .collect(Collectors.joining("\n")));
-        } else {
-            recentMessages = chatMessageRepository.findRecentMessagesAsc(userId, 10);
-            return recentMessages.stream()
+    /**
+     * 특정 유저의 대화 이력이 길어질 경우 핵심 내용을 요약하여 압축합니다. (Summarized Memory)
+     */
+    private String getSummarizedHistory(String userId, List<ChatMessage> history) {
+        if (history.size() < 8) {
+            return history.stream()
                     .map(m -> String.format("%s: %s", m.getRole(), m.getContent()))
                     .collect(Collectors.joining("\n"));
         }
+
+        log.info("유저 {}의 대화 이력 압축 시작 (전체 메시지: {})", userId, history.size());
+        
+        // 앞부분 요약 대상 추출 (최근 3개 제외)
+        String toSummarize = history.stream().limit(history.size() - 3)
+                .map(m -> String.format("%s: %s", m.getRole(), m.getContent()))
+                .collect(Collectors.joining("\n"));
+                
+        String summary = chatClient.prompt()
+                .system("당신은 채용 비서의 기억 관리자입니다. 아래의 대화 내용을 핵심 위주로 아주 간결하게 요약하세요. 지원자의 이름이나 핵심 질문 사항은 반드시 포함해야 합니다.")
+                .user("요약할 대화 내용:\n" + toSummarize)
+                .call()
+                .content();
+                
+        String recent = history.stream().skip(history.size() - 3)
+                .map(m -> String.format("%s: %s", m.getRole(), m.getContent()))
+                .collect(Collectors.joining("\n"));
+
+        return "[이전 대화 요약]: " + summary + "\n\n[최근 대화]:\n" + recent;
     }
 
-    public Flux<ChatResponse> askStream(String userId, String question) {
-        processEpochSummarization(userId);
-        String historyContext = getHistoryContextForAi(userId);
+    @Override
+    public void run(ApplicationArguments args) {
+        log.info("RAG 초기 데이터 로딩 및 임베딩 확인 시작...");
+        List<ApplicantEssay> applicants = applicantRepository.findAll();
+        int skipped = 0;
+        int processed = 0;
 
-        // 1. 라우팅 에이전트: 의도 분석 및 도구 사용 기능 체크
-        String routingResult = chatClient.prompt()
-                .system("당신은 인사 비서팀의 라우팅 팀장입니다. 사용자의 질문 의도를 분석하여 다음 형식으로 답변하세요.\n" +
-                        "형식: `INTENT: [분류] QUERY: [검색어]`\n" +
-                        "- 분류: \n" +
-                        "  1. [SEARCH]: 지원자의 역량, 에세이 내용, 특정 인물 검색 등이 필요한 경우\n" +
-                        "  2. [ACTION]: 이메일 발송, 화면 이동, 시스템 조작 등 도구(Tool) 사용이 필요한 경우\n" +
-                        "  3. [GENERAL]: 인사말, 도구 목록 요청, 일반적인 대화\n" +
-                        "- 검색어: 사용자 질문에서 검색 대상이나 조건(예: '아르바이트 경험이 있는 지원자')을 추출하세요. 의도가 ACTION이라 하더라도 검색이 필요하다면 반드시 추출하고, 검색이 전혀 불필요한 단순 대화(GENERAL)일 경우에만 'NONE'으로 작성하세요.")
-                .user("사용자 질문: " + question + "\n\n최근 맥락:\n" + historyContext)
-                .call().content();
-
-        log.info("[Multi-Agent] 라우팅 분석: {}", routingResult);
-
-        String intent = "GENERAL";
-        String optimizedQuery = question;
-        if (routingResult != null && routingResult.contains("INTENT:")) {
-            if (routingResult.contains("[SEARCH]")) intent = "SEARCH";
-            else if (routingResult.contains("[ACTION]")) intent = "ACTION";
-            
-            int queryStart = routingResult.indexOf("QUERY:");
-            if (queryStart != -1) {
-                optimizedQuery = routingResult.substring(queryStart + 6).trim().replace("[", "").replace("]", "");
-            }
+        for (ApplicantEssay app : applicants) {
+            if (checkAndEmbed(app, "essay1", app.getHsgEssay1())) processed++; else skipped++;
+            if (checkAndEmbed(app, "essay2", app.getHsgEssay2())) processed++; else skipped++;
+            if (checkAndEmbed(app, "essay3", app.getHsgEssay3())) processed++; else skipped++;
+            if (checkAndEmbed(app, "essay4", app.getHsgEssay4())) processed++; else skipped++;
         }
+        log.info("RAG 초기화 완료! (신규 처리: {}, 건너뜀: {})", processed, skipped);
+    }
 
-        // 2. RAG 검색 및 재정렬 (SEARCH일 때만 또는 QUERY가 존재할 때)
-        List<Map<String, Object>> results = List.of();
-        if ("SEARCH".equals(intent) || (!optimizedQuery.equals("NONE") && !optimizedQuery.equals(question))) {
-            float[] queryVector = embeddingService.embedQuery(optimizedQuery);
-            List<Map<String, Object>> candidates = vectorRepository.searchSimilar(queryVector, retrievalTopK, threshold);
-            results = rerankService.rerank(optimizedQuery, candidates, rerankTopK);
-        }
+    private boolean checkAndEmbed(ApplicantEssay app, String type, String content) {
+        if (content == null || content.isBlank()) return false;
+        if (vectorRepository.existsVector(app.getAcceptNo(), type)) return false;
+        embedAndStore(app, type, content);
+        return true;
+    }
 
-        String context = results.isEmpty() ? "(해당 조건에 부합하는 지원자를 찾을 수 없습니다. 추가 정보를 요청하거나 조건이 구체적인지 확인하세요)" : results.stream()
+    private void embedAndStore(ApplicantEssay app, String type, String content) {
+        if (content == null || content.isBlank()) return;
+        float[] vector = embeddingService.embedDocument(content);
+        vectorRepository.upsertVector(app.getAcceptNo(), app.getName(), type, 0, content, vector);
+    }
+
+    public Map<String, Object> ask(String question) {
+        return ask("HR_USER_01", question);
+    }
+
+    public Map<String, Object> ask(String userId, String question) {
+        // 1. 대화 이력 조회 (최근 10개)
+        List<ChatMessage> history = chatMessageRepository.findRecentMessagesAsc(userId, 10);
+        String historyContext = history.stream()
+                .map(m -> String.format("%s: %s", m.getRole(), m.getContent()))
+                .collect(Collectors.joining("\n"));
+
+        // 2. RAG 검색 (1단계: 벡터 유사도 기반 후보군 추출)
+        float[] queryVector = embeddingService.embedQuery(question);
+        List<Map<String, Object>> candidates = vectorRepository.searchSimilar(queryVector, retrievalTopK, threshold);
+
+        // 3. RAG 재정렬 (2단계: Reranker를 통한 정밀 평가)
+        List<Map<String, Object>> results = rerankService.rerank(question, candidates, rerankTopK);
+
+        String context = results.stream()
                 .map(r -> String.format("[%s(%s) %s]: %s", r.get("name"), r.get("accept_no"), r.get("essay_type"), r.get("content")))
                 .collect(Collectors.joining("\n\n"));
 
+        // 4. Spring AI ChatClient를 이용한 답변 생성 (툴 호출 포함)
+        String answer = chatClient.prompt()
+                .user(u -> u.text("아래 정보를 바탕으로 질문에 답하세요.\n\n" +
+                                "[참고 지원자 정보]\n{context}\n\n" +
+                                "[이전 대화 내역]\n{history}\n\n" +
+                                "[사용자 질문]\n{question}")
+                        .param("context", context.isEmpty() ? "(검색 결과 없음)" : context)
+                        .param("history", historyContext.isEmpty() ? "(이력 없음)" : historyContext)
+                        .param("question", question))
+                .call()
+                .content();
+
+        // 4. 대화 내역 저장
+        chatMessageRepository.save(ChatMessage.builder().userId(userId).role("USER").content(question).build());
+        chatMessageRepository.save(ChatMessage.builder().userId(userId).role("AI").content(answer).build());
+
+        return Map.of("answer", answer, "sources", results);
+    }
+
+    public Flux<ChatResponse> askStream(String userId, String question) {
+        // 1. 대화 이력 조회 및 요약 (Summarized Memory)
+        List<ChatMessage> history = chatMessageRepository.findRecentMessagesAsc(userId, 15);
+        String historyContext = getSummarizedHistory(userId, history);
+
+        // 2. Multi-Agent 1단계: 질문 분석 및 검색어 최적화 (Search Agent)
+        String optimizedQuery = chatClient.prompt()
+                .system("당신은 인사 전문 검색 요원입니다. 사용자의 질문을 분석하여 RAG 검색에 가장 유리한 검색어(Search Query) 하나를 만드세요. 불필요한 수식어는 빼고 키워드 위주로 반환하세요.")
+                .user("사용자 질문: " + question)
+                .call().content();
+        log.info("[Multi-Agent] 질문 최적화: {} -> {}", question, optimizedQuery);
+
+        // 3. RAG 검색 및 재정렬
+        float[] queryVector = embeddingService.embedQuery(optimizedQuery != null ? optimizedQuery : question);
+        List<Map<String, Object>> candidates = vectorRepository.searchSimilar(queryVector, retrievalTopK, threshold);
+        List<Map<String, Object>> results = rerankService.rerank(question, candidates, rerankTopK);
+
+        String context = results.stream()
+                .map(r -> String.format("[%s(%s) %s]: %s", r.get("name"), r.get("accept_no"), r.get("essay_type"), r.get("content")))
+                .collect(Collectors.joining("\n\n"));
+
+        // 질문 저장
         chatMessageRepository.save(ChatMessage.builder().userId(userId).role("USER").content(question).build());
 
-        // 3. 최종 답변 생성 (도구 호출 활성화)
+        // 4. 최종 답변 생성 (Self-Critique 가이드 포함)
         final StringBuilder fullAnswer = new StringBuilder();
         return chatClient.prompt()
-                .user(u -> u.text("당신은 유능한 채용 비서입니다. 모든 대답은 반드시 한국어로 작성하세요. (중국어, 영어 등 타 언어 혼용 절대 금지) 아래 정보를 바탕으로 인사 업무를 수행하세요.\n" +
-                                "- 도구(Tool) 사용이 필요한 경우 망설이지 말고 호출하세요.\n" +
-                                "- '사용 가능 도구'에 대해 물으면 등록된 도구(sendResultEmail, navigateTo 등)의 기능과 사용법을 친절히 안내하세요. (단, 안내 시 UI 오작동을 막기 위해 `[APPROVAL_REQUIRED:...]` 같은 실제 토큰 문자열은 절대 화면에 출력하지 마세요.)\n" +
-                                "- sendResultEmail 툴 호출 시 resultType 파라미터는 반드시 대문자 'PASS' 또는 'FAIL'로만 전달하세요.\n" +
-                                "- 여러 명에게 이메일 발송 등 일괄 처리가 필요한 경우, 다음 순서를 엄격히 지키세요:\n" +
-                                "  1) 먼저 마크다운 글머리 기호(`- 이름 (ID)`)를 사용하여 대상자 목록만 화면에 출력합니다.\n" +
-                                "  2) 대상자 목록 출력 후 다른 부연 설명을 덧붙이지 말고 **즉시 `sendBulkResultEmail` 툴을 `confirmed=false`로 호출**합니다.\n" +
-                                "  3) 툴 호출 결과로 반환된 `[APPROVAL_REQUIRED...]` 문자열을 원본 그대로 출력한 뒤 **반드시 응답 생성을 즉시 멈추고 대기하세요**.\n" +
-                                "- **경고**: 절대로 사용자를 대신해 승인 메시지를 창작하거나 출력하지 마세요. 사용자의 실제 입력이 있기 전까지는 어떠한 추가 출력도 하면 안 됩니다.\n" +
-                                "- 사용자가 화면의 버튼을 통해 승인을 지시했을 때만 `confirmed=true`로 툴을 다시 호출하여 발송을 확정하세요.\n" +
-                                "- 만약 사용자가 승인을 취소(`[ACTION_CANCELLED...` 토큰 포함)했다면, 어떠한 멘트나 부연 설명도 하지 말고 **아무런 내용이 없는 빈 응답(침묵)**만 출력하세요. 절대로 다시 툴을 호출하여 승인을 재요청하지 마세요.\n\n" +
+                .user(u -> u.text("아래 정보를 바탕으로 질문에 답하세요. " +
+                                "답변 생성 시 스스로 정보를 재검토(Self-Critique)하여, 사실에 근거한 정확한 내용만 출력하세요.\n\n" +
                                 "[참고 지원자 정보]\n{context}\n\n" +
                                 "[대화 맥락]\n{history}\n\n" +
-                                "[사용자 질문/지시]\n{question}")
-                        .param("context", context)
+                                "[사용자 질문]\n{question}")
+                        .param("context", context.isEmpty() ? "(검색 결과 없음)" : context)
                         .param("history", historyContext)
                         .param("question", question))
                 .stream()
                 .chatResponse()
-                .map(response -> {
-                    if (response.getResult() != null && response.getResult().getOutput() != null) {
-                        String content = response.getResult().getOutput().getText();
-                        fullAnswer.append(content != null ? content : "");
+                .doOnNext(response -> {
+                    if (response.getResult() != null && response.getResult().getOutput() != null && response.getResult().getOutput().getText() != null) {
+                        fullAnswer.append(response.getResult().getOutput().getText());
                     }
-                    return response;
                 })
                 .doOnComplete(() -> {
-                    chatMessageRepository.save(ChatMessage.builder()
-                            .userId(userId)
-                            .role("ASSISTANT")
-                            .content(fullAnswer.toString())
-                            .build());
+                    // 답변 저장
+                    chatMessageRepository.save(ChatMessage.builder().userId(userId).role("AI").content(fullAnswer.toString()).build());
                 });
     }
 
     public List<ChatMessage> getChatHistory(String userId) {
-        return chatMessageRepository.findRecentMessagesAsc(userId, 50);
+        return chatMessageRepository.findRecentMessagesAsc(userId, 20);
     }
 
-    @org.springframework.transaction.annotation.Transactional
     public void clearChatHistory(String userId) {
+        log.info("유저 {}의 대화 내역 초기화 시작", userId);
         chatMessageRepository.deleteByUserId(userId);
     }
 }

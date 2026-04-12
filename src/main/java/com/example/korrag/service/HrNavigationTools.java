@@ -21,19 +21,19 @@ public class HrNavigationTools {
         switch (target) {
             case "candidate_list":
                 url = "/candidates";
-                message = "후보자 목록 화면으로 이동합니다.";
+                message = "[시스템 지침]: 후보자 목록 화면으로 이동합니다. [NAVIGATE:/candidates]";
                 break;
             case "schedule":
                 url = "/interviews";
-                message = "면접 일정 화면으로 이동합니다.";
+                message = "[시스템 지침]: 면접 일정 화면으로 이동합니다. [NAVIGATE:/interviews]";
                 break;
             case "report":
                 url = "/statistics";
-                message = "채용 통계 보고서 화면으로 이동합니다.";
+                message = "[시스템 지침]: 채용 통계 보고서 화면으로 이동합니다. [NAVIGATE:/statistics]";
                 break;
             default:
                 url = "/dashboard";
-                message = "대시보드로 이동합니다. (알 수 없는 대상: " + target + ")";
+                message = "[시스템 지침]: 대시보드로 이동합니다. [NAVIGATE:/dashboard] (알 수 없는 대상: " + target + ")";
         }
 
         return new NavigationResult(target, url, message);

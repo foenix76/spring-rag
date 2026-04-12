@@ -1779,15 +1779,17 @@
 
                             // completed 채널 → 완료 상태 업데이트
                             if (res.completed) {
+                                // LLM이 가짜 Task ID(함수명 등)를 지어낸 경우와 실제 발송 후 생성된 DB의 Task ID가 다를 수 있음.
+                                // 따라서 버튼 클릭 시 기록해둔 processingTaskId가 있는 메시지를 최우선으로 찾아 완료 처리함.
                                 const taskId = extractTaskId(res.completed);
-                                const prevMsg = [...messages].reverse().find(m =>
-                                    m.approvalToken && getTaskId(m.approvalToken) === taskId
+                                const prevMsg = [...messages].reverse().find(m => 
+                                    m.processingTaskId || (m.approvalToken && getTaskId(m.approvalToken) === taskId)
                                 );
                                 if (prevMsg) {
                                     prevMsg.isCompleted = true;
                                     delete prevMsg.processingTaskId;
                                 }
-                                botMsg.systemLogs.push('✅ 처리 완료되었습니다.');
+                                botMsg.systemLogs.push('✅ 처리 완료되었습니다. (' + taskId + ')');
                                 scrollToBottom();
                             }
                         });

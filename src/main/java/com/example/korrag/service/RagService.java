@@ -60,6 +60,7 @@ public class RagService {
     private static final String TOKEN_APPROVAL  = "[APPROVAL:";
     private static final String TOKEN_COMPLETED = "[COMPLETED:";
     private static final String TOKEN_CANCELLED = "[CANCELLED:";
+    private static final String TOKEN_NAVIGATE  = "[NAVIGATE:";
 
     public RagService(ChatClient.Builder chatClientBuilder,
                       OnnxEmbeddingService embeddingService,
@@ -176,8 +177,9 @@ public class RagService {
 
         // --- 5) Flux.create 기반 멀티채널 스트리밍 ---
         final StringBuilder fullTextAccumulator   = new StringBuilder(); // 최종 text 누적
-        final StringBuilder toolResultAccumulator  = new StringBuilder(); // 툴 결과 누적 (필터링용)
         final AtomicBoolean hasApprovalBeenSent   = new AtomicBoolean(false);
+        final AtomicBoolean hasCompletedBeenSent  = new AtomicBoolean(false);
+        final AtomicBoolean hasNavigateBeenSent   = new AtomicBoolean(false);
         final AtomicBoolean savedToDb             = new AtomicBoolean(false); // 중복 저장 방지
         final List<Map<String, Object>> savedEvents = Collections.synchronizedList(new ArrayList<>());
 
@@ -195,112 +197,69 @@ public class RagService {
                             if (response.getResult() != null) {
                                 var output = response.getResult().getOutput();
                                 if (output != null) {
-                                    chunk = Optional.ofNullable(output.getText()).orElse("");
-
-                                    // 툴 호출 결과 감지 (ToolCall 완료 시점)
-                                    if (output.getToolCalls() != null && !output.getToolCalls().isEmpty()) {
-                                        output.getToolCalls().forEach(tc -> {
-                                            log.info("[TOOL_CALL] {} 호출 - 인자: {}", tc.name(), tc.arguments());
-                                            
-                                            // [채널 분기] navigateTo ToolCall 시 텍스트 스트리밍과 완전히 독립적으로 navigate SSE 이벤트 즉시 발송
-                                            if ("navigateTo".equals(tc.name())) {
-                                                String argStr = String.valueOf(tc.arguments());
-                                                String targetUrl = "/dashboard";
-                                                String targetMsg = "대시보드로 이동합니다.";
-                                                
-                                                if (argStr.contains("candidate_list")) { targetUrl = "/candidates"; targetMsg = "후보자 목록 화면으로 이동합니다."; }
-                                                else if (argStr.contains("schedule")) { targetUrl = "/interviews"; targetMsg = "면접 일정 화면으로 이동합니다."; }
-                                                else if (argStr.contains("report")) { targetUrl = "/statistics"; targetMsg = "채용 통계 보고서 화면으로 이동합니다."; }
-                                                else if (argStr.contains("job_postings")) { targetUrl = "/jobs"; targetMsg = "채용공고 관리 화면으로 이동합니다."; }
-
-                                                Map<String, Object> navMap = new HashMap<>();
-                                                navMap.put("message", targetMsg);
-                                                navMap.put("url", targetUrl);
-                                                
-                                                // 1. navigate 전용 채널
-                                                Map<String, Object> navigateEvent = Map.of("navigate", navMap);
-                                                savedEvents.add(navigateEvent);
-                                                sink.next(navigateEvent);
-                                                
-                                                // 2. system 로그 채널
-                                                Map<String, Object> systemEvent = Map.of("system", "[시스템] ToolCall 처리 완료 (이동: " + targetUrl + ")");
-                                                savedEvents.add(systemEvent);
-                                                sink.next(systemEvent);
-                                                
-                                                log.info("[CHANNEL:navigate] ToolCall 감지 즉시 이벤트 발송: {}", targetUrl);
-                                            }
-                                        });
-                                    }
+                                     chunk = Optional.ofNullable(output.getText()).orElse("");
                                 }
                                 if (response.getResult().getMetadata() != null) {
                                     finishReason = response.getResult().getMetadata().getFinishReason();
                                 }
                             }
 
-                            // === 핵심 원천 분리 로직 ===
-                            // 청크에 구조적 토큰이 포함되어 있는지 감지
-                            toolResultAccumulator.append(chunk);
-                            String accumulated = toolResultAccumulator.toString();
+                            // === 심플 텍스트 라우팅 & Non-blocking 토큰 파싱 ===
+                            if (!chunk.isEmpty()) {
+                                fullTextAccumulator.append(chunk);
+                                
+                                // 지연이나 필터링 없이 텍스트 즉시 발송
+                                Map<String, Object> textEvent = Map.of("text", chunk);
+                                savedEvents.add(textEvent);
+                                sink.next(textEvent);
+                            }
+                            
+                            String accumulated = fullTextAccumulator.toString();
 
-                            // [APPROVAL:...] 감지 → approval 채널로 라우팅
-                            if (accumulated.contains(TOKEN_APPROVAL) && !hasApprovalBeenSent.get()) {
-                                int tokenStart = accumulated.indexOf(TOKEN_APPROVAL);
-                                int tokenEnd   = accumulated.indexOf("]", tokenStart);
-                                if (tokenEnd > tokenStart) {
-                                    String approvalToken = accumulated.substring(tokenStart, tokenEnd + 1);
-                                    String textBefore    = accumulated.substring(0, tokenStart).trim();
-
-                                    if (!textBefore.isEmpty()) {
-                                        fullTextAccumulator.append(textBefore).append(" ");
-                                        Map<String, Object> textEvent = Map.of("text", textBefore);
-                                        savedEvents.add(textEvent);
-                                        sink.next(textEvent);
-                                    }
-
-                                    Map<String, Object> approvalEvent = Map.of("approval", approvalToken);
+                            // [APPROVAL:...] 토큰 발송 (최초 1회)
+                            if (!hasApprovalBeenSent.get() && accumulated.contains(TOKEN_APPROVAL)) {
+                                int tS = accumulated.indexOf(TOKEN_APPROVAL);
+                                int tE = accumulated.indexOf("]", tS);
+                                if (tE > tS) {
+                                    String token = accumulated.substring(tS, tE + 1);
+                                    Map<String, Object> approvalEvent = Map.of("approval", token);
                                     savedEvents.add(approvalEvent);
                                     sink.next(approvalEvent);
                                     hasApprovalBeenSent.set(true);
-                                    toolResultAccumulator.setLength(0);
-
-                                    log.info("[CHANNEL:approval] 토큰 발송: {}", approvalToken);
+                                    log.info("[CHANNEL:approval] 토큰 발송: {}", token);
                                 }
-                                return; // approval 처리 완료, 일반 text 처리 스킵
                             }
 
-                            // [COMPLETED:...] 감지 → completed 채널로 라우팅
-                            if (accumulated.contains(TOKEN_COMPLETED)) {
-                                int tokenStart = accumulated.indexOf(TOKEN_COMPLETED);
-                                int tokenEnd   = accumulated.indexOf("]", tokenStart);
-                                if (tokenEnd > tokenStart) {
-                                    String completedToken = accumulated.substring(tokenStart, tokenEnd + 1);
-                                    String textBefore     = accumulated.substring(0, tokenStart).trim();
-
-                                    if (!textBefore.isEmpty()) {
-                                        fullTextAccumulator.append(textBefore).append(" ");
-                                        Map<String, Object> textEvent = Map.of("text", textBefore);
-                                        savedEvents.add(textEvent);
-                                        sink.next(textEvent);
-                                    }
-
-                                    Map<String, Object> completedEvent = Map.of("completed", completedToken);
+                            // [COMPLETED:...] 토큰 발송 (최초 1회)
+                            if (!hasCompletedBeenSent.get() && accumulated.contains(TOKEN_COMPLETED)) {
+                                int tS = accumulated.indexOf(TOKEN_COMPLETED);
+                                int tE = accumulated.indexOf("]", tS);
+                                if (tE > tS) {
+                                    String token = accumulated.substring(tS, tE + 1);
+                                    Map<String, Object> completedEvent = Map.of("completed", token);
                                     savedEvents.add(completedEvent);
                                     sink.next(completedEvent);
-                                    toolResultAccumulator.setLength(0);
-
-                                    log.info("[CHANNEL:completed] 토큰 발송: {}", completedToken);
+                                    hasCompletedBeenSent.set(true);
+                                    log.info("[CHANNEL:completed] 토큰 발송: {}", token);
                                 }
-                                return;
                             }
 
-                            // 일반 텍스트 청크 → text 채널로 라우팅
-                            if (!chunk.isEmpty()) {
-                                // approval이 이미 발송된 후라면 후속 설명 텍스트 필터링 (LLM이 토큰을 읊는 것 방지)
-                                if (!hasApprovalBeenSent.get()) {
-                                    fullTextAccumulator.append(chunk);
-                                    Map<String, Object> textEvent = Map.of("text", chunk);
-                                    savedEvents.add(textEvent);
-                                    sink.next(textEvent);
+                            // [NAVIGATE:...] 토큰 발송 (최초 1회)
+                            if (!hasNavigateBeenSent.get() && accumulated.contains(TOKEN_NAVIGATE)) {
+                                int tS = accumulated.indexOf(TOKEN_NAVIGATE);
+                                int tE = accumulated.indexOf("]", tS);
+                                if (tE > tS) {
+                                    String token = accumulated.substring(tS, tE + 1);
+                                    String url = token.replace("[NAVIGATE:", "").replace("]", "").trim();
+                                    
+                                    Map<String, Object> navMap = new HashMap<>();
+                                    navMap.put("url", url);
+                                    
+                                    Map<String, Object> navigateEvent = Map.of("navigate", navMap);
+                                    savedEvents.add(navigateEvent);
+                                    sink.next(navigateEvent);
+                                    hasNavigateBeenSent.set(true);
+                                    log.info("[CHANNEL:navigate] 화면 이동 이벤트 발송: {}", url);
                                 }
                             }
 
@@ -472,10 +431,15 @@ public class RagService {
                 1. 반드시 한국어로만 응답합니다.
                 2. [참고 지원자 정보]에 없는 지원자 이름, ID, 지원번호를 절대 만들지 마세요.
                    - 정보가 없으면 "해당 정보를 찾을 수 없습니다"라고 솔직하게 말하세요.
-                3. [APPROVAL:...], [COMPLETED:...] 같은 토큰을 직접 작성하지 마세요.
-                   - 이 토큰들은 메일 발송 툴(Tool)이 반환하는 시스템 제어 문자이며, 당신이 임의로 생성하면 오작동을 일으킵니다.
+                3. [APPROVAL:...], [COMPLETED:...], [NAVIGATE:...] 같은 구조적 토큰에 대한 취급 주의:
+                   - 당신 스스로 임의의 토큰을 창작해서는 안 됩니다.
+                   - 단, 당신이 도구(Tool)를 호출한 결과 메세지 안에 대괄호 토큰이 들어있다면, 그 토큰은 단 1글자도 요약/수정/생략하지 말고 당신의 최종 응답 텍스트 맨 마지막에 100% 원본 그대로 똑같이 포함시켜 반드시 출력해야 합니다. (이 토큰이 누락되면 시스템 UI 버튼이 렌더링되지 않거나 화면 이동이 되지 않는 치명적 에러가 발생합니다.)
                 4. 여러 명에게 메일을 보낼 때는 반드시 sendBulkResultEmail 도구를 사용하세요.
-                5. 툴 호출 결과를 그대로 따라 읊지 마세요. 결과를 자연스러운 한국어로 요약해 전달하세요.
+                5. 특정 조건의 지원자 목록을 나열할 때는 **반드시 해당 지원자가 추출된 근거(요약)**를 그 옆에 한 줄로 작성해 주세요.
+                   (예시)
+                   1. **홍길동 (지원번호: 2026_001)** - ㅇㅇ기업 인턴 6개월 경험 있음
+                   2. **김철수 (지원번호: 2026_002)** - 스타트업 마케팅 인턴 이력 있음
+                6. 툴이 반환한 내용 중 토큰을 제외한 나머지 설명 부분은 자연스러운 한국어로 요약하여 전달해도 좋습니다. 단, 토큰만큼은 절대 변경불가입니다.
                 """;
     }
 

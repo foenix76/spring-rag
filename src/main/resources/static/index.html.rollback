@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>채용 에세이 RAG 검색</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sse.js@0.6.1/lib/sse.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #f4f4f9; display: flex; flex-direction: column; height: 100vh; margin: 0; overflow: hidden; }
+        #app { display: flex; flex-direction: column; height: 100vh; width: 100%; }
+        .header { background: #007bff; color: white; padding: 1rem; text-align: center; font-size: 1.25rem; font-weight: bold; flex-shrink: 0; position: relative; }
+        .reset-btn { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); background: #ff4d4f; font-size: 0.8rem; padding: 0.4rem 0.8rem; border-radius: 0.25rem; }
+        .chat-box { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
+        .message { max-width: 80%; padding: 0.75rem 1rem; border-radius: 1rem; line-height: 1.5; font-size: 0.95rem; }
+        .message.user { align-self: flex-end; background: #007bff; color: white; border-bottom-right-radius: 0.25rem; }
+        .message.bot { align-self: flex-start; background: white; border-bottom-left-radius: 0.25rem; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .sources { font-size: 0.8rem; color: #666; margin-top: 0.5rem; border-top: 1px solid #eee; padding-top: 0.5rem; }
+        .input-area { background: white; padding: 1rem; border-top: 1px solid #ddd; display: flex; gap: 0.5rem; }
+        input { flex: 1; padding: 0.75rem; border: 1px solid #ddd; border-radius: 0.5rem; outline: none; }
+        button { padding: 0.75rem 1.5rem; background: #007bff; color: white; border: none; border-radius: 0.5rem; cursor: pointer; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        
+        /* 커서 애니메이션 */
+        .cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.1rem;
+            background: #007bff;
+            margin-left: 2px;
+            vertical-align: middle;
+            animation: blink 1s infinite;
+        }
+        @keyframes blink {
+            0%, 50%, 100% { opacity: 1 }
+            25%, 75% { opacity: 0 }
+        }
+
+        /* 💡 생각 중 상태 UX */
+        .thinking-indicator {
+            font-style: italic;
+            color: #999;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .dot {
+            width: 6px;
+            height: 6px;
+            background: #ccc;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .dot:nth-child(1) { animation-delay: -0.32s; }
+        .dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div class="header">
+        채용 에세이 RAG 검색 시스템
+        <button class="reset-btn" @click="clearHistory">초기화</button>
+    </div>
+    
+    <div class="chat-box" ref="chatBox">
+        <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.type]">
+            <div style="white-space: pre-wrap; position: relative;">
+                <span v-if="msg.status === 'thinking'" class="thinking-indicator">
+                    🤔 생각 중...
+                    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                </span>
+                <span v-else>
+                    {{ renderMessage(msg.text) }}
+                    <div v-if="parseApproval(msg.text)" class="approval-area" style="margin-top: 10px; border-top: 1px dashed #ccc; padding-top: 10px;">
+                        <div style="font-weight: bold; color: #d9534f; margin-bottom: 8px;">⚠️ 이 작업은 사용자의 승인이 필요합니다.</div>
+                        <div style="display: flex; gap: 8px;">
+                            <button @click="approveAction(parseApproval(msg.text))" style="background: #28a745; font-size: 0.85rem; padding: 0.4rem 0.8rem;">승인 및 발송</button>
+                            <button @click="rejectAction(msg)" style="background: #dc3545; font-size: 0.85rem; padding: 0.4rem 0.8rem;">거절</button>
+                        </div>
+                    </div>
+                </span>
+                <span v-if="msg.status === 'typing' || (msg.status === 'thinking' && msg.type === 'bot')" class="cursor"></span>
+            </div>
+            <div v-if="msg.sources" class="sources">
+                <strong>참고:</strong>
+                <span v-for="s in msg.sources"> {{ s.name }}({{ (s.similarity * 100).toFixed(1) }}%) </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="input-area">
+        <input type="text" ref="userInputField" v-model="userInput" @keyup.enter="sendMessage()" placeholder="질문을 입력하세요... (예: 테슬라 언급한 지원자)" :disabled="isLoading">
+        <button @click="sendMessage()" :disabled="isLoading || !userInput.trim()">전송</button>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, reactive, nextTick, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            // --- Data (Reactive State) ---
+            const userInput = ref('');
+            const messages = reactive([
+                { type: 'bot', text: '안녕하세요! 채용 에세이 RAG 검색 시스템입니다.' }
+            ]);
+            const isLoading = ref(false);
+            const chatBox = ref(null);
+            const userInputField = ref(null);
+
+            // --- Methods ---
+            const loadHistory = async () => {
+                try {
+                    const response = await fetch('/api/chat/history?userId=HR_USER_01');
+                    const history = await response.json();
+                    if (history && history.length > 0) {
+                        // 기존 환영 메시지 제거 (역사가 있다면)
+                        messages.length = 0;
+                        history.forEach(m => {
+                            messages.push({
+                                type: m.role.toLowerCase() === 'ai' ? 'bot' : 'user',
+                                text: m.content
+                            });
+                        });
+                    }
+                } catch (e) {
+                    console.error('History load failed:', e);
+                } finally {
+                    await scrollToBottom();
+                }
+            };
+
+            const clearHistory = async () => {
+                if (!confirm('기억을 지우시겠습니까? 지금까지의 대화가 모두 사라집니다.')) return;
+
+                try {
+                    await fetch('/api/chat/history?userId=HR_USER_01', { method: 'DELETE' });
+                    messages.length = 0; // 화면의 모든 메시지 삭제
+                } catch (e) {
+                    alert('초기화 실패: ' + e.message);
+                }
+            };
+
+            const scrollToBottom = async () => {
+                await nextTick();
+                if (chatBox.value) {
+                    chatBox.value.scrollTo({
+                        top: chatBox.value.scrollHeight,
+                        behavior: 'smooth'
+                    });
+                }
+            };
+
+            const renderMessage = (text) => {
+                // 승인 토큰은 텍스트에서 숨김 처리
+                return text.replace(/\[APPROVAL_REQUIRED:.*?\]/g, '').trim();
+            };
+
+            const parseApproval = (text) => {
+                const match = text.match(/\[APPROVAL_REQUIRED:(EMAIL):(.+?):(.+?)\]/);
+                if (match) {
+                    return { type: match[1], candidateId: match[2], resultType: match[3] };
+                }
+                return null;
+            };
+
+            const approveAction = async (payload) => {
+                const confirmMsg = `시스템 지시: 후보자 ${payload.candidateId}에게 ${payload.resultType} 메일 발송을 승인합니다. sendResultEmail 툴을 confirmed=true 옵션으로 즉시 실행하세요.`;
+                userInput.value = confirmMsg;
+                await sendMessage(true); // 시스템 메시지임을 표시하기 위해 true 전달 (UI에서는 숨길 수 있음)
+            };
+
+            const rejectAction = (msg) => {
+                msg.text = "메일 발송이 사용자에 의해 거절되었습니다.";
+                // 추가적인 로직 필요시 구현
+            };
+
+            const sendMessage = async (isSystemAction = false) => {
+                const text = userInput.value.trim();
+                if (!text || isLoading.value) return;
+
+                // 유저 메시지 추가 (시스템 액션이 아닐 때만 화면에 표시)
+                if (!isSystemAction) {
+                    messages.push({ type: 'user', text: text, status: 'idle' });
+                }
+                
+                userInput.value = '';
+                isLoading.value = true;
+                
+                // ⭐️ 전송 즉시 포커스 다시 잡기
+                nextTick(() => {
+                    if (userInputField.value) userInputField.value.focus();
+                });
+                
+                // AI 답변용 메시지 초기화 (상태: thinking)
+                const botMessage = reactive({ 
+                    type: 'bot', 
+                    text: '', 
+                    status: 'thinking', 
+                    sources: null 
+                });
+                messages.push(botMessage);
+                
+                await scrollToBottom();
+
+                // 🔹 타이핑 UX를 위한 엔진 설정
+                let buffer = ''; // 서버에서 온 원본 텍스트 누적
+                let cursor = 0;  // 현재 화면에 찍힌 커서 위치
+                let typingTimer = null;
+
+                const startTypingEngine = () => {
+                    if (typingTimer) return;
+                    typingTimer = setInterval(() => {
+                        if (cursor < buffer.length) {
+                            // 상태 전환: 첫 글자가 찍히기 시작하면 'typing'
+                            if (botMessage.status === 'thinking') {
+                                botMessage.status = 'typing';
+                            }
+                            botMessage.text += buffer[cursor];
+                            cursor++;
+                            scrollToBottom();
+                        } else {
+                            // 버퍼를 다 비웠고 스트림도 끝났다면 엔진 정지
+                            if (!isLoading.value) {
+                                clearInterval(typingTimer);
+                                typingTimer = null;
+                                botMessage.status = 'idle'; // 완료
+                            }
+                        }
+                    }, 25); // 🔹 형의 추천 리듬: 25ms
+                };
+
+                try {
+                    const sse = new SSE('/api/chat', {
+                        headers: { 'Content-Type': 'application/json' },
+                        payload: JSON.stringify({ message: text }),
+                        method: 'POST'
+                    });
+
+                    sse.addEventListener('message', (e) => {
+                        try {
+                            const response = JSON.parse(e.data);
+                            let content = '';
+                            if (response.result && response.result.output) {
+                                content = response.result.output.content || response.result.output.text || '';
+                            }
+                            
+                            if (content) {
+                                // ⭐️ 받은 데이터를 버퍼에만 쌓음
+                                buffer += content;
+                                // 타이핑 엔진 가동
+                                startTypingEngine();
+                            }
+                        } catch (err) {
+                            console.error('JSON Parse Error:', err, e.data);
+                        }
+                    });
+
+                    sse.addEventListener('error', (e) => {
+                        console.error('SSE Error:', e);
+                        botMessage.text = '오류가 발생했습니다: ' + (e.data || '서버 응답 오류');
+                        botMessage.status = 'idle';
+                        isLoading.value = false;
+                        if (typingTimer) clearInterval(typingTimer);
+                    });
+
+                    sse.addEventListener('readystatechange', (e) => {
+                        if (e.readyState === 2) { // CLOSED
+                            isLoading.value = false;
+                        }
+                    });
+
+                    sse.stream();
+
+                } catch (e) {
+                    botMessage.text = '오류가 발생했습니다: ' + e.message;
+                    botMessage.status = 'idle';
+                    isLoading.value = false;
+                }
+            };
+
+            // --- Lifecycle ---
+            onMounted(() => {
+                loadHistory();
+                // ⭐️ 페이지 로드 시 최초 포커스
+                nextTick(() => {
+                    if (userInputField.value) userInputField.value.focus();
+                });
+            });
+
+            return {
+                userInput,
+                messages,
+                isLoading,
+                chatBox,
+                userInputField,
+                sendMessage,
+                scrollToBottom,
+                clearHistory,
+                renderMessage,
+                parseApproval,
+                approveAction,
+                rejectAction
+            };
+        }
+    }).mount('#app');
+</script>
+
+</body>
+</html>

@@ -133,37 +133,29 @@ public class RagService {
         }
     }
 
-    public Flux<ChatResponse> askStream(String userId, String question) {
+    public Flux<Map<String, Object>> askStream(String userId, String question) {
         processEpochSummarization(userId);
         String historyContext = getHistoryContextForAi(userId);
 
-        // 1. 라우팅 에이전트: 의도 분석 및 도구 사용 기능 체크
+        // 1. 라우팅 에이전트
         String routingResult = chatClient.prompt()
                 .system("당신은 인사 비서팀의 라우팅 팀장입니다. 사용자의 질문 의도를 분석하여 다음 형식으로 답변하세요.\n" +
                         "형식: `INTENT: [분류] QUERY: [검색어]`\n" +
-                        "- 분류: \n" +
-                        "  1. [SEARCH]: 지원자의 역량, 에세이 내용, 특정 인물 검색 등이 필요한 경우\n" +
-                        "  2. [ACTION]: 이메일 발송, 화면 이동, 시스템 조작 등 도구(Tool) 사용이 필요한 경우\n" +
-                        "  3. [GENERAL]: 인사말, 도구 목록 요청, 일반적인 대화\n" +
-                        "- 검색어: 사용자 질문에서 검색 대상이나 조건(예: '아르바이트 경험이 있는 지원자')을 추출하세요. 의도가 ACTION이라 하더라도 검색이 필요하다면 반드시 추출하고, 검색이 전혀 불필요한 단순 대화(GENERAL)일 경우에만 'NONE'으로 작성하세요.")
+                        "- 분류: [SEARCH], [ACTION], [GENERAL]\n" +
+                        "- 검색어: 키워드 위주로 추출, 불필요하면 NONE")
                 .user("사용자 질문: " + question + "\n\n최근 맥락:\n" + historyContext)
                 .call().content();
-
-        log.info("[Multi-Agent] 라우팅 분석: {}", routingResult);
 
         String intent = "GENERAL";
         String optimizedQuery = question;
         if (routingResult != null && routingResult.contains("INTENT:")) {
             if (routingResult.contains("[SEARCH]")) intent = "SEARCH";
             else if (routingResult.contains("[ACTION]")) intent = "ACTION";
-            
             int queryStart = routingResult.indexOf("QUERY:");
-            if (queryStart != -1) {
-                optimizedQuery = routingResult.substring(queryStart + 6).trim().replace("[", "").replace("]", "");
-            }
+            if (queryStart != -1) optimizedQuery = routingResult.substring(queryStart + 6).trim().replace("[", "").replace("]", "");
         }
 
-        // 2. RAG 검색 및 재정렬 (SEARCH일 때만 또는 QUERY가 존재할 때)
+        // 2. RAG 검색
         List<Map<String, Object>> results = List.of();
         if ("SEARCH".equals(intent) || (!optimizedQuery.equals("NONE") && !optimizedQuery.equals(question))) {
             float[] queryVector = embeddingService.embedQuery(optimizedQuery);
@@ -171,48 +163,79 @@ public class RagService {
             results = rerankService.rerank(optimizedQuery, candidates, rerankTopK);
         }
 
-        String context = results.isEmpty() ? "(해당 조건에 부합하는 지원자를 찾을 수 없습니다. 추가 정보를 요청하거나 조건이 구체적인지 확인하세요)" : results.stream()
+        String context = results.isEmpty() ? "(검색 결과 없음)" : results.stream()
                 .map(r -> String.format("[%s(%s) %s]: %s", r.get("name"), r.get("accept_no"), r.get("essay_type"), r.get("content")))
                 .collect(Collectors.joining("\n\n"));
 
         chatMessageRepository.save(ChatMessage.builder().userId(userId).role("USER").content(question).build());
 
-        // 3. 최종 답변 생성 (도구 호출 활성화)
+        // 3. 멀티 채널 스트리밍 처리기
         final StringBuilder fullAnswer = new StringBuilder();
+        final StringBuilder lineBuffer = new StringBuilder();
+        
         return chatClient.prompt()
-                .user(u -> u.text("당신은 유능한 채용 비서입니다. 모든 대답은 반드시 한국어로 작성하세요. (중국어, 영어 등 타 언어 혼용 절대 금지) 아래 정보를 바탕으로 인사 업무를 수행하세요.\n" +
-                                "- 도구(Tool) 사용이 필요한 경우 망설이지 말고 호출하세요.\n" +
-                                "- '사용 가능 도구'에 대해 물으면 등록된 도구(sendResultEmail, navigateTo 등)의 기능과 사용법을 친절히 안내하세요. (단, 안내 시 UI 오작동을 막기 위해 `[APPROVAL_REQUIRED:...]` 같은 실제 토큰 문자열은 절대 화면에 출력하지 마세요.)\n" +
-                                "- sendResultEmail 툴 호출 시 resultType 파라미터는 반드시 대문자 'PASS' 또는 'FAIL'로만 전달하세요.\n" +
-                                "- 여러 명에게 일괄 메일을 보내야 하는 경우 **반드시** 다음 단계를 따르세요:\n" +
-                                "  1. 먼저 마크다운 리스트 형식으로 `- 이름 (ID): [근거]` 를 출력합니다. [근거]에는 해당 지원자가 조건(예: 아르바이트 경험 등)에 왜 부합하는지 에세이 내용을 바탕으로 한 문장으로 요약해 적으세요.\n" +
-                                "  2. 목록 출력 직후, 어떠한 부연 설명도 없이 즉시 `sendBulkResultEmail` 도구를 `confirmed=false`로 호출하세요.\n" +
-                                "  3. 도구의 실행 결과로 나온 `[APPROVAL_REQUIRED:...]` 문자열을 출력의 맨 마지막에 **토씨 하나 틀리지 말고 그대로** 덧붙여 응답을 마칩니다.\n" +
-                                "  4. 사용자가 승인하여 도구 실행이 완료되고 `[ACTION_COMPLETED:...]` 토큰이 반환되면, 해당 토큰을 최종 답변의 맨 마지막에 **절대로 누락하지 말고 반드시 포함**하여 출력하세요. 그래야 시스템이 완료 상태를 인식할 수 있습니다.\n" +
-                                "- **시스템 지침 준수**: 만약 도구 실행 결과에 `[시스템 지침]`으로 시작하는 메시지가 있다면, 해당 줄을 **원본 그대로 답변의 첫 줄 또는 마지막 줄에 반드시 포함**하세요. 이 태그가 누락되면 시스템 로그가 기록되지 않습니다.\n" +
-                                "- **중요**: 모든 응답은 반드시 한국어로만 작성하세요. (중국어, 영어 절대 금지)\n" +
-                                "- **경고**: 사용자가 직접 승인 버튼을 누르기 전까지는 스스로 승인되었다고 말하거나 발송을 완료했다고 거짓말하지 마세요. 도구가 반환한 실제 결과만 정직하게 보고하세요.\n\n" +
-                                "[참고 지원자 정보]\n{context}\n\n" +
-                                "[대화 맥락]\n{history}\n\n" +
-                                "[사용자 질문/지시]\n{question}")
-                        .param("context", context)
-                        .param("history", historyContext)
-                        .param("question", question))
+                .user(u -> u.text("당신은 유능한 채용 비서입니다. 모든 대답은 반드시 한국어로 작성하세요. (중국어, 한자 혼용 절대 금지)\n" +
+                                "- **메시지 유형 구분 (중요)**:\n" +
+                                "  1. [시스템 로그]: 도구 실행 결과 중 `[시스템 지침]`으로 시작하는 내용은 답변의 맨 처음에 그대로 포함하되, 다른 내용과 섞지 마세요.\n" +
+                                "  2. [사용자 대화]: 사용자에게 묻는 질문(예: '발송할까요?')이나 일반 답변은 친절한 말투로 작성하세요.\n" +
+                                "  3. [승인 토큰]: `[APPROVAL_REQUIRED:...]` 토큰은 반드시 답변의 맨 마지막에 위치시켜야 합니다.\n" +
+                                "- **경고**: `[APPROVAL_REQUIRED]` 토큰이 포함된 줄에는 절대로 `[시스템 지침]` 태그를 붙이지 마세요. 승인 요청은 로그가 아니라 사용자에게 직접 묻는 '대화'입니다.\n" +
+                                "- 일괄 처리 단계:\n" +
+                                "  1. `- 이름 (ID): [선정 근거]` 목록을 먼저 출력.\n" +
+                                "  2. 다른 부연 설명 없이 즉시 `sendBulkResultEmail(confirmed=false)` 도구 호출.\n" +
+                                "  3. 도구가 반환한 승인 요청 메시지와 토큰을 답변 마지막에 출력.\n\n" +
+                                "[참고 지원자 정보]\n" + context + "\n\n" +
+                                "[대화 맥락]\n" + historyContext + "\n\n" +
+                                "[사용자 질문/지시]\n" + question))
                 .stream()
                 .chatResponse()
                 .map(response -> {
-                    if (response.getResult() != null && response.getResult().getOutput() != null) {
-                        String content = response.getResult().getOutput().getText();
-                        fullAnswer.append(content != null ? content : "");
+                    String chunk = "";
+                    String finishReason = null;
+                    
+                    if (response.getResult() != null) {
+                        if (response.getResult().getOutput() != null) {
+                            chunk = response.getResult().getOutput().getText();
+                            if (chunk == null) chunk = "";
+                        }
+                        if (response.getResult().getMetadata() != null) {
+                            finishReason = response.getResult().getMetadata().getFinishReason();
+                        }
                     }
-                    return response;
-                })
-                .doOnComplete(() -> {
-                    chatMessageRepository.save(ChatMessage.builder()
-                            .userId(userId)
-                            .role("ASSISTANT")
-                            .content(fullAnswer.toString())
-                            .build());
+
+                    Map<String, Object> event = new java.util.HashMap<>();
+                    fullAnswer.append(chunk);
+                    lineBuffer.append(chunk);
+
+                    String currentLine = lineBuffer.toString();
+                    
+                    // 태그 판별 로직
+                    boolean isTagLine = currentLine.contains("[시스템 지침]") || 
+                                      currentLine.contains("[APPROVAL_REQUIRED]") || 
+                                      currentLine.contains("[ACTION_COMPLETED]") || 
+                                      currentLine.contains("[ACTION_CANCELLED]");
+
+                    if (currentLine.contains("\n") || (finishReason != null && !finishReason.isEmpty())) {
+                        if (isTagLine) {
+                            if (currentLine.contains("[시스템 지침]")) event.put("system", currentLine.trim());
+                            else if (currentLine.contains("[APPROVAL_REQUIRED]")) event.put("approval", currentLine.trim());
+                            else event.put("completed", currentLine.trim());
+                            lineBuffer.setLength(0);
+                        } else {
+                            event.put("text", currentLine);
+                            lineBuffer.setLength(0);
+                        }
+                    } else if (!currentLine.startsWith("[") || currentLine.length() > 50) {
+                        // 일반 텍스트는 즉시 흘려보냄
+                        event.put("text", currentLine);
+                        lineBuffer.setLength(0);
+                    }
+
+                    if (finishReason != null && !finishReason.isEmpty()) {
+                        chatMessageRepository.save(ChatMessage.builder()
+                                .userId(userId).role("ASSISTANT").content(fullAnswer.toString()).build());
+                    }
+                    return event;
                 });
     }
 

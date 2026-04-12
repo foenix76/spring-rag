@@ -21,7 +21,7 @@ public class ChatController {
     }
 
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ChatResponse> chat(@RequestBody Map<String, String> request) {
+    public Flux<Map<String, Object>> chat(@RequestBody Map<String, String> request) {
         String userId = request.getOrDefault("userId", "HR_USER_01");
         String message = request.get("message");
         return ragService.askStream(userId, message);

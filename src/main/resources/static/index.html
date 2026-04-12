@@ -75,23 +75,21 @@
     
     <div class="chat-box" ref="chatBox">
         <div v-for="(msg, idx) in messages" :key="idx" style="display: contents;">
-            <!-- [시스템 지침] 스타일 -->
-            <div v-if="msg.text && (msg.text.includes('[시스템 지침]') || msg.text.includes('[ACTION_COMPLETED]'))" class="message-system">
-                <template v-for="line in msg.text.split('\n')">
-                    <div v-if="line.includes('[시스템 지침]')" style="margin: 2px 0;">
-                        <i class="fas fa-terminal"></i> {{ line.replace(/\[NAVIGATE:[^\]]*\]/g, '').trim() }}
-                    </div>
-                </template>
+            <!-- 1. 시스템 지침/로그 영역 (존재하는 라인만 출력) -->
+            <div v-if="getSystemLines(msg.text).length > 0" class="message-system">
+                <div v-for="line in getSystemLines(msg.text)" style="margin: 2px 0;">
+                    <i class="fas fa-terminal"></i> {{ cleanSystemLine(line) }}
+                </div>
             </div>
             
-            <!-- 일반 메시지 스타일 (시스템 지침 제외한 본문만 출력) -->
-            <div v-else-if="msg.status === 'thinking' || msg.status === 'typing' || renderMessage(msg.text) || hasApproval(msg.text)" :class="['message', msg.type]">
+            <!-- 2. 일반 말풍선 영역 (시스템 지침을 제외한 본문이나 버튼이 있을 때만) -->
+            <div v-if="shouldShowBubble(msg)" :class="['message', msg.type]">
                 <div v-if="msg.status === 'thinking'" class="thinking">
                     😊 열심히 생각 중... <span class="dot"></span><span class="dot"></span><span class="dot"></span>
                 </div>
                 <div v-else>
                     <span v-html="renderMessage(msg.text)"></span>
-                    <span v-if="msg.status === 'typing' || (msg.type === 'bot' && idx === messages.length - 1)" class="cursor"></span>
+                    <span v-if="msg.status === 'typing' || (msg.type === 'bot' && idx === messages.length - 1 && !msg.text.includes('[APPROVAL_REQUIRED]'))" class="cursor"></span>
                     
                     <!-- 승인 기능 카드 -->
                     <div v-if="hasApproval(msg.text)" class="approval-card">
@@ -170,11 +168,27 @@
 
             const renderMessage = (text) => {
                 if (!text) return '';
-                return text.replace(/\[시스템 지침\]:.*(\n|$)/g, '') // 시스템 지침 라인은 말풍선에서 제거
+                // [시스템 지침] 라인과 [ACTION_COMPLETED] 같은 로그성 라인을 말풍선에서 제거
+                return text.split('\n')
+                           .filter(line => !line.includes('[시스템 지침]') && !line.includes('[ACTION_COMPLETED]'))
+                           .join('\n')
                            .replace(/\[APPROVAL_REQUIRED[^\]]*\]?/gi, '')
-                           .replace(/\[ACTION_COMPLETED[^\]]*\]?/gi, '')
-                           .replace(/\[ACTION_CANCELLED[^\]]*\]?/gi, '')
                            .trim().replace(/\n/g, '<br>');
+            };
+
+            const getSystemLines = (text) => {
+                if (!text) return [];
+                // [APPROVAL_REQUIRED] 토큰이 포함된 줄은 절대 시스템 로그로 취급하지 않음 (이중 안전장치)
+                return text.split('\n').filter(line => (line.includes('[시스템 지침]') || line.includes('[ACTION_COMPLETED]')) && !line.includes('[APPROVAL_REQUIRED]'));
+            };
+            const cleanSystemLine = (line) => {
+                return line.replace(/\[시스템 지침\]:?/g, '').replace(/\[NAVIGATE:[^\]]*\]/g, '').replace(/\[ACTION_COMPLETED:[^\]]*\]/g, '').replace(/\[ACTION_CANCELLED:[^\]]*\]/g, '').trim();
+            };
+            const shouldShowBubble = (msg) => {
+                if (msg.status === 'thinking' || msg.status === 'typing') return true;
+                const textWithoutSystem = renderMessage(msg.text);
+                // 본문 텍스트가 있거나, 승인 요청 토큰이 있으면 무조건 말풍선 렌더링
+                return textWithoutSystem.length > 0 || hasApproval(msg.text);
             };
 
             const hasApproval = (text) => text?.includes('APPROVAL_REQUIRED') && text?.includes('ALL');
@@ -237,9 +251,19 @@
                     const sse = new SSE('/api/chat', { headers: { 'Content-Type': 'application/json' }, payload: JSON.stringify({ message: text }), method: 'POST' });
                     sse.addEventListener('message', (e) => {
                         const res = JSON.parse(e.data);
-                        // content와 text 필드 모두 대응 (멀티 에이전트 대응용)
-                        const content = res.result?.output?.content || res.result?.output?.text;
-                        if (content) buffer += content;
+                        
+                        // 1. 순수 텍스트 답변 (말풍선용)
+                        if (res.text) buffer += res.text;
+                        
+                        // 2. 시스템 지침 (터미널용) - 즉시 처리
+                        if (res.system) {
+                            botMsg.text += (botMsg.text ? '\n' : '') + res.system;
+                        }
+                        
+                        // 3. 승인 및 완료 토큰
+                        if (res.approval || res.completed) {
+                            botMsg.text += (botMsg.text ? '\n' : '') + (res.approval || res.completed);
+                        }
                     });
                     sse.addEventListener('readystatechange', (e) => { if (e.readyState === 2) isLoading.value = false; });
                     sse.stream();
@@ -248,7 +272,7 @@
 
             onMounted(() => { loadHistory(); nextTick(() => userInputField.value?.focus()); });
 
-            return { userInput, messages, isLoading, chatBox, userInputField, sendMessage, clearHistory, renderMessage, hasApproval, getTaskId, isActionCompleted, isActionCancelled, approveAction, cancelAction };
+            return { userInput, messages, isLoading, chatBox, userInputField, sendMessage, clearHistory, renderMessage, hasApproval, getTaskId, isActionCompleted, isActionCancelled, approveAction, cancelAction, getSystemLines, cleanSystemLine, shouldShowBubble };
         }
     }).mount('#app');
 </script>

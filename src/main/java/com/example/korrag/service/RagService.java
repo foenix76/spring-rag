@@ -343,7 +343,7 @@ public class RagService {
                 사용자: "인턴 경험 있는 지원자 3명 합격 메일 보내줘"
                 → INTENT: [ACTION] QUERY: 인턴 경험
                 
-                사용자: "후보자 목록 화면으로 이동해줘"
+                사용자: "지원자 목록 화면으로 이동해줘"
                 → INTENT: [ACTION] QUERY: NONE
                 
                 사용자: "안녕"

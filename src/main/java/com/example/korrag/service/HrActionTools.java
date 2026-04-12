@@ -25,7 +25,7 @@ public class HrActionTools {
     }
 
     @Tool(description = """
-            후보자 한 명에게 합격(PASS) 또는 불합격(FAIL) 통보 메일을 발송합니다.
+            지원자 한 명에게 합격(PASS) 또는 불합격(FAIL) 통보 메일을 발송합니다.
             이 작업은 민감하므로 반드시 먼저 사용자 승인을 요청해야 합니다.
             confirmed=false로 먼저 호출하여 승인 요청을 생성하세요.
             사용자가 명시적으로 '승인'한다는 메시지를 보낸 경우에만 confirmed=true로 재호출하세요.
@@ -42,25 +42,25 @@ public class HrActionTools {
             log.info("[AI ACTION] 단건 메일 승인 요청: candidateId={}, result={}", candidateId, statusKor);
             String token = String.format("[APPROVAL:EMAIL:%s:%s]", candidateId, resultType.toUpperCase());
             toolEventPublisher.publishEvent(userId, java.util.Map.of("approval", token));
-            return String.format("후보자(%s)님께 %s 결과 메일 발송을 위한 승인 요청 카드를 사용자 화면에 표시했습니다. 승인을 대기합니다.", candidateId, statusKor);
+            return String.format("지원자(%s)님께 %s 결과 메일 발송을 위한 승인 요청 카드를 사용자 화면에 표시했습니다. 승인을 대기합니다.", candidateId, statusKor);
         }
 
         // 실제 발송 처리 (실제 환경에서는 메일 서비스 호출)
         log.info("[AI ACTION] [CONFIRMED] sendResultEmail 실행: candidateId={}, result={}", candidateId, statusKor);
         String token = String.format("[COMPLETED:EMAIL:%s]", candidateId);
         toolEventPublisher.publishEvent(userId, java.util.Map.of("completed", token));
-        return String.format("후보자(%s)님께 %s 결과 메일을 성공적으로 발송 완료했습니다.", candidateId, statusKor);
+        return String.format("지원자(%s)님께 %s 결과 메일을 성공적으로 발송 완료했습니다.", candidateId, statusKor);
     }
 
     @Tool(description = """
-            여러 후보자에게 합격(PASS) 또는 불합격(FAIL) 통보 메일을 일괄 발송합니다.
+            여러 지원자에게 합격(PASS) 또는 불합격(FAIL) 통보 메일을 일괄 발송합니다.
             대상자가 2명 이상이면 반드시 이 도구를 사용하세요 (sendResultEmail 반복 금지).
             confirmed=false로 먼저 호출하여 일괄 승인 요청을 생성하세요.
             사용자가 명시적으로 '승인'한다는 메시지를 보낸 경우에만 confirmed=true로 재호출하세요.
             """)
     public String sendBulkResultEmail(
             @ToolParam(description = "필수: 현재 요청을 수행하는 사용자의 ID. 항상 'HR_USER_01'을 입력하세요.") String userId,
-            @ToolParam(description = "후보자 ID 목록, 쉼표로 구분 (예: ID001, ID002, ID003)") String candidateIds,
+            @ToolParam(description = "지원자 ID 목록, 쉼표로 구분 (예: ID001, ID002, ID003)") String candidateIds,
             @ToolParam(description = "결과 유형: PASS(합격) 또는 FAIL(불합격)") String resultType,
             @ToolParam(description = "사용자가 명시적으로 승인한 경우에만 true") boolean confirmed) {
 
@@ -72,12 +72,12 @@ public class HrActionTools {
             log.info("[AI ACTION] 일괄 메일 승인 요청: taskId={}, candidates=[{}], result={}", taskId, candidateIds, statusKor);
             String token = String.format("[APPROVAL:BULK:%s]", taskId);
             toolEventPublisher.publishEvent(userId, java.util.Map.of("approval", token));
-            return String.format("총 %d명의 후보자(%s)에게 %s 메일을 일괄 발송하기 위한 승인 요청 카드를 사용자 화면에 표시했습니다. 승인을 대기합니다.", candidateIds.split(",").length, candidateIds.trim(), statusKor);
+            return String.format("총 %d명의 지원자(%s)에게 %s 메일을 일괄 발송하기 위한 승인 요청 카드를 사용자 화면에 표시했습니다. 승인을 대기합니다.", candidateIds.split(",").length, candidateIds.trim(), statusKor);
         }
 
         log.info("[AI ACTION] [CONFIRMED] sendBulkResultEmail 실행: taskId={}, candidates=[{}]", taskId, candidateIds);
         String token = String.format("[COMPLETED:BULK:%s]", taskId);
         toolEventPublisher.publishEvent(userId, java.util.Map.of("completed", token));
-        return String.format("총 %d명의 후보자(%s)에게 %s 결과 메일을 일괄 발송 완료했습니다.", candidateIds.split(",").length, candidateIds.trim(), statusKor);
+        return String.format("총 %d명의 지원자(%s)에게 %s 결과 메일을 일괄 발송 완료했습니다.", candidateIds.split(",").length, candidateIds.trim(), statusKor);
     }
 }

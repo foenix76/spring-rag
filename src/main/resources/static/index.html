@@ -985,7 +985,7 @@
             </div>
             <div :class="['sidebar-item', currentView === 'candidates' ? 'active' : '']"
                 @click="navigateView('candidates')">
-                <i class="fas fa-users"></i>후보자 목록
+                <i class="fas fa-users"></i>지원자 목록
             </div>
             <div :class="['sidebar-item', currentView === 'schedule' ? 'active' : '']"
                 @click="navigateView('schedule')">
@@ -1187,9 +1187,9 @@
                     </div>
                 </div>
 
-                <!-- 후보자 목록 -->
+                <!-- 지원자 목록 -->
                 <div class="page-view" v-else-if="currentView === 'candidates'">
-                    <p class="page-title">후보자 목록</p>
+                    <p class="page-title">지원자 목록</p>
                     <p class="page-subtitle">전체 지원자 127명 / 서류진행 34명</p>
                     <table class="data-table">
                         <thead>
@@ -1448,7 +1448,7 @@
                 // 화면별 메타 정보
                 const viewMeta = {
                     dashboard: { label: '대시보드' },
-                    candidates: { label: '후보자 목록' },
+                    candidates: { label: '지원자 목록' },
                     schedule: { label: '면접 일정' },
                     report: { label: '채용 통계' },
                     jobs: { label: '채용공고' },

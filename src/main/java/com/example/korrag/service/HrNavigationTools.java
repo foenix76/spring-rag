@@ -35,21 +35,26 @@ public class HrNavigationTools {
             @ToolParam(description = "이동할 화면: dashboard | candidate_list | schedule | report | job_postings") String target) {
         log.info("[AI ACTION] navigateTo 호출: target={}", target);
 
-        String menuName = switch (target) {
-            case "candidate_list" -> "지원자 목록";
-            case "schedule"       -> "면접 일정";
-            case "report"         -> "채용 통계 보고서";
-            case "job_postings"   -> "채용공고 관리";
-            default               -> "대시보드";
-        };
-        
-        String url = switch (target) {
-            case "candidate_list" -> "/candidates";
-            case "schedule"       -> "/interviews";
-            case "report"         -> "/statistics";
-            case "job_postings"   -> "/jobs";
-            default               -> "/dashboard";
-        };
+        String lowerTarget = target != null ? target.toLowerCase() : "";
+        String menuName;
+        String url;
+
+        if (lowerTarget.contains("candidate") || lowerTarget.contains("지원자")) {
+            menuName = "지원자 목록";
+            url = "/candidates";
+        } else if (lowerTarget.contains("schedule") || lowerTarget.contains("면접")) {
+            menuName = "면접 일정";
+            url = "/interviews";
+        } else if (lowerTarget.contains("report") || lowerTarget.contains("통계")) {
+            menuName = "채용 통계 보고서";
+            url = "/statistics";
+        } else if (lowerTarget.contains("job") || lowerTarget.contains("채용공고")) {
+            menuName = "채용공고 관리";
+            url = "/jobs";
+        } else {
+            menuName = "대시보드";
+            url = "/dashboard";
+        }
 
         // UI에 화면 이동 이벤트(URL 포함)를 직접 발송 (파싱 불필요)
         java.util.Map<String, Object> navData = new java.util.HashMap<>();

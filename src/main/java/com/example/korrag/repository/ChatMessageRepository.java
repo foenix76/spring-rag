@@ -30,12 +30,12 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     long countByUserId(String userId);
 
     @org.springframework.transaction.annotation.Transactional
-    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM ChatMessage c WHERE c.userId = :userId AND c.role = :role")
     void deleteByUserIdAndRole(@Param("userId") String userId, @Param("role") String role);
 
     @org.springframework.transaction.annotation.Transactional
-    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM ChatMessage c WHERE c.userId = :userId")
     void deleteByUserId(@Param("userId") String userId);
 }

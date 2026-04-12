@@ -1077,7 +1077,7 @@
                     <div class="input-wrapper">
                         <input type="text" class="input-field" ref="userInputField" v-model="userInput"
                             @keyup.enter="sendMessage()" placeholder="지원자 검색, 메일 발송, 화면 이동 등을 요청하세요..."
-                            :disabled="isLoading" id="chatInput" />
+                            id="chatInput" />
                     </div>
                     <button class="send-btn" @click="sendMessage()" :disabled="isLoading || !userInput.trim()"
                         id="sendBtn">

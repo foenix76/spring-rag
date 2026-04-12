@@ -63,6 +63,8 @@ public class RagService {
     private static final String TOKEN_NAVIGATE  = "[NAVIGATE:";
 
     private final ToolEventPublisher toolEventPublisher;
+    private final HrActionTools actionTools;
+    private final HrNavigationTools navigationTools;
 
     public RagService(ChatClient.Builder chatClientBuilder,
                       OnnxEmbeddingService embeddingService,
@@ -72,9 +74,9 @@ public class RagService {
                       HrActionTools actionTools,
                       HrNavigationTools navigationTools,
                       ToolEventPublisher toolEventPublisher) {
-        this.chatClient = chatClientBuilder
-                .defaultTools(actionTools, navigationTools)
-                .build();
+        this.chatClient = chatClientBuilder.build();
+        this.actionTools = actionTools;
+        this.navigationTools = navigationTools;
         this.embeddingService    = embeddingService;
         this.vectorRepository    = vectorRepository;
         this.rerankService       = rerankService;
@@ -192,7 +194,8 @@ public class RagService {
             
             try {
                 chatClient.prompt()
-                        .system(buildMainSystemPrompt())
+                        .tools(actionTools, navigationTools)
+                        .system(buildMainSystemPrompt(userId))
                         .user(buildUserPrompt(context, history, question))
                         .stream().chatResponse()
                         .publishOn(Schedulers.boundedElastic())
@@ -329,16 +332,14 @@ public class RagService {
                 - ACTION: 메일 발송, 화면 이동 등 실제 작업 요청 (검색 후 작업해야 할 경우 포함)
                 - GENERAL: 단순 인사, 시스템 관련 일반 질문
                 - QUERY: 검색에 사용할 핵심 키워드 (동의어/연관어 포함). 찾을 대상이 없으면 NONE
+                단, ACTION의 경우에도 메일 발송 대상 등 특정 지원자를 찾아야 한다면 반드시 검색어를 QUERY에 포함하세요.
                 
                 예시:
                 사용자: "올해 지원자 목록 보여줘"
                 → INTENT: [SEARCH] QUERY: 지원자 목록
                 
-                사용자: "김민준 에세이 어때?"
-                → INTENT: [SEARCH] QUERY: 김민준
-                
                 사용자: "이 사람한테 합격 메일 보내줘"
-                → INTENT: [ACTION] QUERY: NONE
+                → INTENT: [ACTION] QUERY: 최근 조회 지원자
                 
                 사용자: "인턴 경험 있는 지원자 3명 합격 메일 보내줘"
                 → INTENT: [ACTION] QUERY: 인턴 경험
@@ -379,9 +380,10 @@ public class RagService {
     }
 
     /** 메인 LLM 시스템 프롬프트 */
-    private String buildMainSystemPrompt() {
-        return """
+    private String buildMainSystemPrompt(String userId) {
+        return String.format("""
                 당신은 대한민국 채용 HR 시스템의 유능한 AI 비서입니다.
+                [현재 세션 사용자 ID: %s]
                 
                 [절대 규칙 - 시스템 마비 방지용]
                 1. 반드시 모든 응답은 한국어로만 답변합니다. (중국어, 영어 절대 불가)
@@ -391,7 +393,8 @@ public class RagService {
                    - 당신은 "승인 카드를 띄워드렸습니다.", "발송되었습니다." 와 같이 과정만 부드럽게 대답해 주면 됩니다.
                 4. 여러 명에게 메일을 보낼 때는 반드시 sendBulkResultEmail 도구를 사용하세요.
                 5. 특정 조건의 지원자 목록을 나열할 때는 **반드시 해당 지원자가 추출된 근거(요약)**를 그 옆에 한 줄로 작성해 주세요.
-                """;
+                6. 만약 사용자 입력이 '[시스템 승인]' 또는 '[시스템 취소]'로 시작한다면, 지원자 정보 유무와 관계없이 무조건 "네, 해당 작업을 승인/취소 처리했습니다."와 같이 매우 짧고 자연스럽게 대답만 하고 다른 부연 설명을 하지 마세요.
+                """, userId);
     }
 
     /** 메인 LLM 사용자 프롬프트 조합 */

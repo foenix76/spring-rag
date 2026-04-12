@@ -53,31 +53,32 @@ public class HrActionTools {
     }
 
     @Tool(description = """
-            여러 지원자에게 합격(PASS) 또는 불합격(FAIL) 통보 메일을 일괄 발송합니다.
-            대상자가 2명 이상이면 반드시 이 도구를 사용하세요 (sendResultEmail 반복 금지).
+            [필수 도구] 여러 명의 지원자에게 메일을 일괄 발송해야 할 때 무조건 사용해야 하는 기능입니다.
+            텍스트로 "승인 카드를 띄워드립니다"라고 말만 하지 말고, 반드시 이 도구를 **직접 실행**하여 approval 이벤트를 발생시키세요.
             confirmed=false로 먼저 호출하여 일괄 승인 요청을 생성하세요.
             사용자가 명시적으로 '승인'한다는 메시지를 보낸 경우에만 confirmed=true로 재호출하세요.
             """)
     public String sendBulkResultEmail(
             @ToolParam(description = "필수: 현재 요청을 수행하는 사용자의 ID. 항상 'HR_USER_01'을 입력하세요.") String userId,
-            @ToolParam(description = "지원자 ID 목록, 쉼표로 구분 (예: ID001, ID002, ID003)") String candidateIds,
+            @ToolParam(description = "지원자 ID 또는 지원번호 목록 배열 (예: [\"ID001\", \"ID002\"])") String[] candidateIds,
             @ToolParam(description = "결과 유형: PASS(합격) 또는 FAIL(불합격)") String resultType,
             @ToolParam(description = "사용자가 명시적으로 승인한 경우에만 true") boolean confirmed) {
 
         String statusKor = resultType.equalsIgnoreCase("PASS") ? "합격" : "불합격";
+        String joinedIds = String.join(", ", candidateIds);
         // 태스크 ID: 대상 IDs 해시 기반으로 고유 생성
-        String taskId = "BULK_" + Integer.toHexString(Math.abs(candidateIds.hashCode())).toUpperCase();
+        String taskId = "BULK_" + Integer.toHexString(Math.abs(joinedIds.hashCode())).toUpperCase();
 
         if (!confirmed) {
-            log.info("[AI ACTION] 일괄 메일 승인 요청: taskId={}, candidates=[{}], result={}", taskId, candidateIds, statusKor);
+            log.info("[AI ACTION] 일괄 메일 승인 요청: taskId={}, candidates=[{}], result={}", taskId, joinedIds, statusKor);
             String token = String.format("[APPROVAL:BULK:%s]", taskId);
             toolEventPublisher.publishEvent(userId, java.util.Map.of("approval", token));
-            return String.format("총 %d명의 지원자(%s)에게 %s 메일을 일괄 발송하기 위한 승인 요청 카드를 사용자 화면에 표시했습니다. 승인을 대기합니다.", candidateIds.split(",").length, candidateIds.trim(), statusKor);
+            return String.format("총 %d명의 지원자(%s)에게 %s 메일을 일괄 발송하기 위한 승인 요청 카드를 사용자 화면에 표시했습니다. 승인을 대기합니다.", candidateIds.length, joinedIds, statusKor);
         }
 
-        log.info("[AI ACTION] [CONFIRMED] sendBulkResultEmail 실행: taskId={}, candidates=[{}]", taskId, candidateIds);
+        log.info("[AI ACTION] [CONFIRMED] sendBulkResultEmail 실행: taskId={}, candidates=[{}]", taskId, joinedIds);
         String token = String.format("[COMPLETED:BULK:%s]", taskId);
         toolEventPublisher.publishEvent(userId, java.util.Map.of("completed", token));
-        return String.format("총 %d명의 지원자(%s)에게 %s 결과 메일을 일괄 발송 완료했습니다.", candidateIds.split(",").length, candidateIds.trim(), statusKor);
+        return String.format("총 %d명의 지원자(%s)에게 %s 결과 메일을 일괄 발송 완료했습니다.", candidateIds.length, joinedIds, statusKor);
     }
 }

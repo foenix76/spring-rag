@@ -27,7 +27,8 @@ public class HrNavigationTools {
     public record NavigationResult(String target, String url) {}
 
     @Tool(description = """
-            HR 시스템 내 특정 화면으로 이동합니다.
+            [필수 도구] 사용자가 특정 화면으로 이동하거나 보여달라고 요청할 때 무조건 사용해야 하는 기능입니다.
+            텍스트로 "이동합니다" 라고 말만 하지 말고, 반드시 이 도구를 **직접 실행**하여 브라우저 이벤트를 발생시키세요.
             가능한 이동 대상: dashboard(대시보드), candidate_list(지원자 목록), schedule(면접 일정), report(통계 보고서), job_postings(채용공고)
             """)
     public String navigateTo(

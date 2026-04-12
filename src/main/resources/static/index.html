@@ -11,53 +11,28 @@
         :root { --primary: #1a73e8; --bg: #f8f9fa; --bot-msg: #ffffff; --user-msg: #1a73e8; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; padding: 0; height: 100vh; overflow: hidden; }
         #app { display: flex; flex-direction: column; height: 100vh; }
-        
         .header { background: var(--primary); color: white; padding: 1rem 1.5rem; text-align: center; font-size: 1.25rem; font-weight: 700; display: flex; justify-content: center; align-items: center; position: relative; box-shadow: 0 2px 10px rgba(0,0,0,0.1); flex-shrink: 0; }
         .reset-btn { position: absolute; right: 1rem; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 0.4rem 0.8rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer; transition: 0.2s; }
         .reset-btn:hover { background: rgba(255,255,255,0.3); }
-
         .chat-box { flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
-        
-        /* 일반 메시지 스타일 */
         .message { max-width: 80%; padding: 0.8rem 1rem; border-radius: 1rem; line-height: 1.5; font-size: 0.95rem; position: relative; }
         .message.user { align-self: flex-end; background: var(--user-msg); color: white; border-bottom-right-radius: 0.2rem; }
         .message.bot { align-self: flex-start; background: var(--bot-msg); color: #333; border: 1px solid #eef0f2; border-bottom-left-radius: 0.2rem; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-
-        /* 🛠️ 시스템 지침(로그) 연출 - 형의 요청사항 */
-        .message-system {
-            align-self: center;
-            width: 90%;
-            text-align: center;
-            font-size: 0.75rem;
-            color: #888;
-            opacity: 0.6;
-            margin: 0.5rem 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
+        .message-system { align-self: center; width: 90%; text-align: center; font-size: 0.75rem; color: #888; opacity: 0.6; margin: 0.5rem 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
         .message-system::before, .message-system::after { content: ""; flex: 1; height: 1px; background: linear-gradient(to right, transparent, #ddd, transparent); }
-
         .sources { font-size: 0.8rem; color: #777; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed #eee; }
-        
         .input-area { padding: 1rem; background: white; border-top: 1px solid #eee; display: flex; gap: 0.5rem; flex-shrink: 0; }
         input { flex: 1; padding: 0.75rem 1rem; border: 1px solid #ddd; border-radius: 25px; outline: none; font-size: 1rem; }
         input:focus { border-color: var(--primary); }
         .send-btn { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 25px; font-weight: 600; cursor: pointer; }
         .send-btn:disabled { background: #ccc; }
-
-        /* 커서 & 특수 UI */
         .cursor { display: inline-block; width: 2px; height: 1rem; background: var(--primary); margin-left: 4px; vertical-align: middle; animation: blink 1s infinite; }
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-        
         .thinking { font-style: italic; color: #aaa; display: flex; align-items: center; gap: 5px; }
         .dot { width: 4px; height: 4px; background: #bbb; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
         .dot:nth-child(2) { animation-delay: 0.2s; }
         .dot:nth-child(3) { animation-delay: 0.4s; }
         @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
-
-        /* 카드 UI */
         .approval-card { margin-top: 1rem; padding: 1rem; border: 1px solid #e0e7ff; background: #f5f3ff; border-radius: 0.75rem; }
         .btn-group { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
         .btn { flex: 1; padding: 0.6rem; border-radius: 0.5rem; border: none; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
@@ -66,47 +41,40 @@
     </style>
 </head>
 <body>
-
 <div id="app">
     <div class="header">
         채용 에세이 RAG 검색 시스템
         <button class="reset-btn" @click="clearHistory">초기화</button>
     </div>
-    
     <div class="chat-box" ref="chatBox">
         <div v-for="(msg, idx) in messages" :key="idx" style="display: contents;">
-            <!-- 1. 시스템 지침/로그 영역 (존재하는 라인만 출력) -->
-            <div v-if="getSystemLines(msg.text).length > 0" class="message-system">
-                <div v-for="line in getSystemLines(msg.text)" style="margin: 2px 0;">
-                    <i class="fas fa-terminal"></i> {{ cleanSystemLine(line) }}
+            <div v-if="msg.systemLogs && msg.systemLogs.length > 0" class="message-system">
+                <div v-for="log in msg.systemLogs" :key="log" style="margin: 2px 0;">
+                    <i class="fas fa-terminal"></i> {{ (log || '').replace(/\[COMPLETED:[^\]]*\]/g, '').trim() }}
                 </div>
             </div>
-            
-            <!-- 2. 일반 말풍선 영역 (시스템 지침을 제외한 본문이나 버튼이 있을 때만) -->
-            <div v-if="shouldShowBubble(msg)" :class="['message', msg.type]">
+            <div v-if="msg.status === 'thinking' || msg.status === 'typing' || renderMessage(msg.text) || msg.approvalToken" :class="['message', msg.type]">
                 <div v-if="msg.status === 'thinking'" class="thinking">
                     😊 열심히 생각 중... <span class="dot"></span><span class="dot"></span><span class="dot"></span>
                 </div>
                 <div v-else>
                     <span v-html="renderMessage(msg.text)"></span>
-                    <span v-if="msg.status === 'typing' || (msg.type === 'bot' && idx === messages.length - 1 && !msg.text.includes('[APPROVAL_REQUIRED]'))" class="cursor"></span>
-                    
-                    <!-- 승인 기능 카드 -->
-                    <div v-if="hasApproval(msg.text)" class="approval-card">
+                    <span v-if="msg.status === 'typing' || (msg.type === 'bot' && idx === messages.length - 1 && !msg.approvalToken)" class="cursor"></span>
+                    <div v-if="msg.approvalToken" class="approval-card">
                         <div class="flex items-center gap-2 mb-2">
                             <i class="fas fa-envelope-open-text text-indigo-600"></i>
-                            <span class="font-bold text-sm">일괄 발송 승인 요청 (ID: {{getTaskId(msg.text)}})</span>
+                            <span class="font-bold text-sm">일괄 발송 승인 요청 (ID: {{getTaskId(msg.approvalToken)}})</span>
                         </div>
-                        <div v-if="!msg.isRejected && !isActionCompleted(msg.text) && !isActionCancelled(msg.text)" class="btn-group">
+                        <div v-if="!msg.isRejected && !isActionCompleted(msg) && !isActionCancelled(msg)" class="btn-group">
                             <div v-if="msg.processingTaskId" class="flex-1 text-center py-2 text-indigo-600 text-sm animate-pulse">
-                                <i class="fas fa-spinner fa-spin"></i> 발송 중...
+                                <i class="fas fa-spinner fa-spin"></i> 처리 중...
                             </div>
                             <template v-else>
                                 <button class="btn btn-primary" @click="approveAction(msg)" :disabled="isLoading">일괄 승인 및 발송</button>
                                 <button class="btn btn-secondary" @click="cancelAction(msg)" :disabled="isLoading">발송 취소</button>
                             </template>
                         </div>
-                        <div v-else-if="msg.isRejected || isActionCancelled(msg.text)" class="text-center py-1 text-gray-400 text-xs">취소된 작업입니다.</div>
+                        <div v-else-if="msg.isRejected || isActionCancelled(msg)" class="text-center py-1 text-gray-400 text-xs">취소된 작업입니다.</div>
                         <div v-else class="text-center py-1 text-green-600 text-xs font-bold">처리 완료 ✅</div>
                     </div>
                 </div>
@@ -117,162 +85,104 @@
             </div>
         </div>
     </div>
-
     <div class="input-area">
-        <input type="text" ref="userInputField" v-model="userInput" @keyup.enter="sendMessage()" placeholder="질문을 입력하세요...">
+        <input type="text" ref="userInputField" v-model="userInput" @keyup.enter="sendMessage()" placeholder="질문을 입력하세요..." :disabled="isLoading">
         <button class="send-btn" @click="sendMessage()" :disabled="isLoading || !userInput.trim()">전송</button>
     </div>
 </div>
-
 <script>
     const { createApp, ref, reactive, nextTick, onMounted, watch } = Vue;
-
     createApp({
         setup() {
             const userInput = ref('');
-            const messages = reactive([{ type: 'bot', text: '안녕하세요! 채용 에세이 RAG 시스템입니다.', status: 'idle' }]);
+            const messages = reactive([{ type: 'bot', text: '안녕하세요! 채용 에세이 RAG 시스템입니다.', status: 'idle', systemLogs: [] }]);
             const isLoading = ref(false);
             const chatBox = ref(null);
             const userInputField = ref(null);
-
-            watch(isLoading, (newVal) => {
-                if (!newVal) {
-                    nextTick(() => userInputField.value?.focus());
-                }
-            });
-
+            watch(isLoading, (newVal) => { if (!newVal) nextTick(() => userInputField.value?.focus()); });
             const scrollToBottom = async () => { await nextTick(); if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight; };
-            
             const loadHistory = async () => {
                 try {
                     const res = await fetch('/api/chat/history?userId=HR_USER_01');
                     const history = await res.json();
                     if (history?.length > 0) {
                         messages.length = 0;
-                        history
-                            .filter(m => m.role !== 'SUMMARY')
-                            .forEach(m => {
-                                const type = (m.role.toLowerCase() === 'ai' || m.role.toLowerCase() === 'assistant') ? 'bot' : 'user';
-                                messages.push({ type, text: m.content, status: 'idle' });
-                            });
+                        history.filter(m => m.role !== 'SUMMARY').forEach(m => {
+                            const type = (m.role.toLowerCase() === 'ai' || m.role.toLowerCase() === 'assistant') ? 'bot' : 'user';
+                            const msgObj = { type, text: m.content || '', status: 'idle', systemLogs: [] };
+                            if (type === 'bot') {
+                                const lines = (m.content || '').split('\n');
+                                msgObj.systemLogs = lines.filter(l => l.includes('화면으로 이동합니다') || l.includes('[COMPLETED:'));
+                                const appMatch = (m.content || '').match(/\[APPROVAL:[^\]]*\]/);
+                                if (appMatch) msgObj.approvalToken = appMatch[0];
+                            }
+                            messages.push(msgObj);
+                        });
                     }
                 } catch (e) { console.error(e); } finally { scrollToBottom(); }
             };
-
             const clearHistory = async () => {
                 if (!confirm('초기화할까요?')) return;
                 await fetch('/api/chat/history?userId=HR_USER_01', { method: 'DELETE' });
                 messages.length = 0;
-                messages.push({ type: 'bot', text: '초기화되었습니다.', status: 'idle' });
+                messages.push({ type: 'bot', text: '초기화되었습니다.', status: 'idle', systemLogs: [] });
             };
-
             const renderMessage = (text) => {
                 if (!text) return '';
-                // [시스템 지침] 라인과 [ACTION_COMPLETED] 같은 로그성 라인을 말풍선에서 제거
-                return text.split('\n')
-                           .filter(line => !line.includes('[시스템 지침]') && !line.includes('[ACTION_COMPLETED]'))
-                           .join('\n')
-                           .replace(/\[APPROVAL_REQUIRED[^\]]*\]?/gi, '')
-                           .trim().replace(/\n/g, '<br>');
+                return text.split('\n').filter(l => !l.includes('[APPROVAL:') && !l.includes('[COMPLETED:') && !l.includes('화면으로 이동합니다')).join('\n').trim().replace(/\n/g, '<br>');
             };
-
-            const getSystemLines = (text) => {
-                if (!text) return [];
-                // [APPROVAL_REQUIRED] 토큰이 포함된 줄은 절대 시스템 로그로 취급하지 않음 (이중 안전장치)
-                return text.split('\n').filter(line => (line.includes('[시스템 지침]') || line.includes('[ACTION_COMPLETED]')) && !line.includes('[APPROVAL_REQUIRED]'));
-            };
-            const cleanSystemLine = (line) => {
-                return line.replace(/\[시스템 지침\]:?/g, '').replace(/\[NAVIGATE:[^\]]*\]/g, '').replace(/\[ACTION_COMPLETED:[^\]]*\]/g, '').replace(/\[ACTION_CANCELLED:[^\]]*\]/g, '').trim();
-            };
-            const shouldShowBubble = (msg) => {
-                if (msg.status === 'thinking' || msg.status === 'typing') return true;
-                const textWithoutSystem = renderMessage(msg.text);
-                // 본문 텍스트가 있거나, 승인 요청 토큰이 있으면 무조건 말풍선 렌더링
-                return textWithoutSystem.length > 0 || hasApproval(msg.text);
-            };
-
-            const hasApproval = (text) => text?.includes('APPROVAL_REQUIRED') && text?.includes('ALL');
-            const getTaskId = (text) => {
-                const match = /\[APPROVAL_REQUIRED[^\]]*:ALL:([^\]\s]+)\]?/i.exec(text);
+            const getTaskId = (token) => {
+                if (!token) return 'Unknown';
+                const match = /:BULK:([^\]\s]+)\]/i.exec(token) || /:EMAIL:([^\]\s]+):/i.exec(token);
                 return match ? match[1] : 'Unknown';
             };
-            const isActionCompleted = (text) => {
-                const taskId = getTaskId(text);
-                return taskId !== 'Unknown' && messages.some(m => m.text?.includes(`[ACTION_COMPLETED`) && m.text?.includes(`ALL:${taskId}`));
-            };
-            const isActionCancelled = (text) => {
-                const taskId = getTaskId(text);
-                return taskId !== 'Unknown' && messages.some(m => m.text?.includes(`[ACTION_CANCELLED`) && m.text?.includes(`ALL:${taskId}`));
-            };
-
+            const isActionCompleted = (msg) => msg.isCompleted || (msg.text && msg.text.includes('[COMPLETED:'));
+            const isActionCancelled = (msg) => (msg.text && msg.text.includes('[CANCELLED:'));
             const approveAction = async (msg) => {
                 if (isLoading.value) return;
-                const taskId = getTaskId(msg.text);
+                const taskId = getTaskId(msg.approvalToken);
                 msg.processingTaskId = taskId;
-                // [ACTION_COMPLETED] 토큰을 포함하여 기록에 남김으로써 재로딩 시에도 처리 완료 상태를 유지함
-                const confirmMsg = `[시스템 지침]: Task ID ${taskId} 에 대해 메일 발송을 승인합니다. [ACTION_COMPLETED:ALL:${taskId}] sendBulkResultEmail 툴을 confirmed=true로 호출하여 발송을 완료하세요.`;
-                userInput.value = confirmMsg;
+                userInput.value = `[시스템 지침]: Task ID ${taskId} 에 대해 메일 발송을 승인합니다. [COMPLETED:BULK:${taskId}] sendBulkResultEmail 툴을 confirmed=true로 호출하여 발송을 완료하세요.`;
                 await sendMessage(true);
             };
-
             const cancelAction = async (msg) => {
                 if (isLoading.value) return;
-                const taskId = getTaskId(msg.text);
+                const taskId = getTaskId(msg.approvalToken);
                 msg.isRejected = true;
-                const cancelMsg = `[시스템 지침]: Task ID ${taskId} 에 대한 일괄 메일 발송이 취소되었습니다. [ACTION_CANCELLED:ALL:${taskId}]`;
-                userInput.value = cancelMsg;
+                userInput.value = `[시스템 지침]: Task ID ${taskId} 에 대한 발송이 취소되었습니다. [CANCELLED:ALL:${taskId}]`;
                 await sendMessage(true);
             };
-
             const sendMessage = async (isSystem = false) => {
                 const text = userInput.value.trim();
                 if (!text || isLoading.value) return;
-                
-                // 시스템 메시지(isSystem=true)라도 화면에 즉각 렌더링되도록 무조건 push
-                messages.push({ type: 'user', text, status: 'idle' });
-                
+                messages.push({ type: 'user', text, status: 'idle', systemLogs: [] });
                 userInput.value = ''; isLoading.value = true;
-                const botMsg = reactive({ type: 'bot', text: '', status: 'thinking' });
+                const botMsg = reactive({ type: 'bot', text: '', status: 'thinking', systemLogs: [] });
                 messages.push(botMsg); scrollToBottom();
-
                 let buffer = ''; let cursor = 0;
                 let typingTimer = setInterval(() => {
                     if (cursor < buffer.length) {
                         botMsg.status = 'typing'; botMsg.text += buffer[cursor++]; scrollToBottom();
                     } else if (!isLoading.value) {
-                        clearInterval(typingTimer);
-                        botMsg.status = 'idle';
-                        // 응답이 끝나면 모든 메시지의 '처리 중' 상태를 해제 (안전장치)
+                        clearInterval(typingTimer); botMsg.status = 'idle';
                         messages.forEach(m => { if (m.processingTaskId) delete m.processingTaskId; });
                     }
                 }, 20);
-
                 try {
                     const sse = new SSE('/api/chat', { headers: { 'Content-Type': 'application/json' }, payload: JSON.stringify({ message: text }), method: 'POST' });
                     sse.addEventListener('message', (e) => {
                         const res = JSON.parse(e.data);
-                        
-                        // 1. 순수 텍스트 답변 (말풍선용)
                         if (res.text) buffer += res.text;
-                        
-                        // 2. 시스템 지침 (터미널용) - 즉시 처리
-                        if (res.system) {
-                            botMsg.text += (botMsg.text ? '\n' : '') + res.system;
-                        }
-                        
-                        // 3. 승인 및 완료 토큰
-                        if (res.approval || res.completed) {
-                            botMsg.text += (botMsg.text ? '\n' : '') + (res.approval || res.completed);
-                        }
+                        if (res.system) { if (!botMsg.systemLogs) botMsg.systemLogs = []; botMsg.systemLogs.push(res.system); }
+                        if (res.approval) botMsg.approvalToken = res.approval;
+                        if (res.completed) { if (!botMsg.systemLogs) botMsg.systemLogs = []; botMsg.systemLogs.push(res.completed); botMsg.isCompleted = true; }
                     });
                     sse.addEventListener('readystatechange', (e) => { if (e.readyState === 2) isLoading.value = false; });
                     sse.stream();
                 } catch (e) { botMsg.text = '에러 발생: ' + e.message; isLoading.value = false; clearInterval(typingTimer); }
             };
-
             onMounted(() => { loadHistory(); nextTick(() => userInputField.value?.focus()); });
-
-            return { userInput, messages, isLoading, chatBox, userInputField, sendMessage, clearHistory, renderMessage, hasApproval, getTaskId, isActionCompleted, isActionCancelled, approveAction, cancelAction, getSystemLines, cleanSystemLine, shouldShowBubble };
+            return { userInput, messages, isLoading, chatBox, userInputField, sendMessage, clearHistory, renderMessage, getTaskId, isActionCompleted, isActionCancelled, approveAction, cancelAction };
         }
     }).mount('#app');
 </script>
